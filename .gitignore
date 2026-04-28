@@ -1,0 +1,8 @@
+﻿node_modules
+artifacts
+cache
+frontend/node_modules
+frontend/dist
+.env
+frontend/.env
+steps_extracted.txt
