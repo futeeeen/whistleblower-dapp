@@ -65,6 +65,25 @@ Use these values when adding/switching local network:
 
 Import one test account private key from `npm run node` output.
 
+## Multi-User Setup (Polygon Amoy Testnet)
+
+If multiple people on different computers need to submit and see the same records, use Polygon Amoy.
+
+- Network Name: `Polygon Amoy Testnet`
+- Chain ID: `80002`
+- Chain ID (hex): `0x13882`
+- RPC URL: `https://rpc-amoy.polygon.technology`
+- Currency Symbol: `POL`
+- Explorer: `https://amoy.polygonscan.com`
+
+Flow:
+
+1. Deploy contract to Amoy (one person deploys once).
+2. Share the deployed contract address with teammates.
+3. Everyone sets the same `VITE_CONTRACT_ADDRESS` in `frontend/.env`.
+4. In frontend, click `一鍵切到 Polygon Amoy Testnet`.
+5. Everyone gets Amoy test POL from faucet and starts sending reports.
+
 ## How to Get Required MetaMask Info
 
 - RPC URL: from your local node command (`npm run node`), default is `127.0.0.1:8545`
@@ -93,6 +112,11 @@ Import one test account private key from `npm run node` output.
   - Reads detected chainId from RPC.
   - Tries to switch MetaMask to that chain.
   - If chain not found in MetaMask, auto-adds it and then switches.
+
+- `一鍵切到 Polygon Amoy Testnet`
+  - Switches MetaMask to Amoy (`80002`).
+  - If missing, auto-adds Amoy network with official RPC and explorer.
+  - Best for cross-device collaboration (shared on-chain records).
 
 - `查詢所有檢舉`
   - Reads `caseCount` and fetches `cases(1..N)` from contract.

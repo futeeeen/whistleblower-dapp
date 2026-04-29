@@ -5,6 +5,11 @@ import whistleblowerArtifact from "./Whistleblower.json";
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "";
 const COMMON_LOCAL_CHAIN_IDS = [31337, 1337];
 const COMMON_LOCAL_CHAIN_LABEL = "31337 (0x7a69) 或 1337 (0x539)";
+const AMOY_CHAIN_ID = 80002;
+const AMOY_CHAIN_HEX = "0x13882";
+const AMOY_RPC_URL = "https://rpc-amoy.polygon.technology";
+const POLYGON_FAUCET_URL = "https://faucet.polygon.technology/";
+const ALCHEMY_FAUCET_URL = "https://www.alchemy.com/faucets/polygon-amoy";
 const LOCAL_RPC_CANDIDATES = [
   "http://127.0.0.1:8545",
   "http://localhost:8545",
@@ -104,8 +109,11 @@ function App() {
       const network = await provider.getNetwork();
       setNetworkInfo(`目前鏈: ${network.name} (chainId=${network.chainId})`);
 
-      if (!COMMON_LOCAL_CHAIN_IDS.includes(network.chainId)) {
-        setStatus(`目前鏈非常見本機鏈，建議先切換到 ${COMMON_LOCAL_CHAIN_LABEL} 再送出。`);
+      const isAllowed = COMMON_LOCAL_CHAIN_IDS.includes(network.chainId) || network.chainId === AMOY_CHAIN_ID;
+      if (!isAllowed) {
+        setStatus(
+          `目前鏈不在支援清單。請切換到本機鏈 (${COMMON_LOCAL_CHAIN_LABEL}) 或 Polygon Amoy (${AMOY_CHAIN_ID})。`
+        );
         return;
       }
 
@@ -220,6 +228,49 @@ function App() {
     }
   }
 
+  async function switchToAmoyNetwork() {
+    if (!window.ethereum) {
+      setStatus("未偵測到 MetaMask。");
+      return;
+    }
+
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: AMOY_CHAIN_HEX }]
+      });
+      setStatus("已切換到 Polygon Amoy Testnet。");
+    } catch (switchErr) {
+      if (switchErr?.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: AMOY_CHAIN_HEX,
+                chainName: "Polygon Amoy Testnet",
+                rpcUrls: [AMOY_RPC_URL],
+                nativeCurrency: { name: "POL", symbol: "POL", decimals: 18 },
+                blockExplorerUrls: ["https://amoy.polygonscan.com"]
+              }
+            ]
+          });
+          setStatus("已新增並切換到 Polygon Amoy Testnet。");
+        } catch (addErr) {
+          setStatus("新增 Amoy 網路失敗: " + parseEthersError(addErr));
+        }
+      } else {
+        setStatus("切換 Amoy 網路失敗: " + parseEthersError(switchErr));
+      }
+    }
+  }
+
+  function openAmoyFaucets() {
+    window.open(POLYGON_FAUCET_URL, "_blank", "noopener,noreferrer");
+    window.open(ALCHEMY_FAUCET_URL, "_blank", "noopener,noreferrer");
+    setStatus("已開啟 Polygon 與 Alchemy Faucet，請貼上錢包地址領取測試 POL。");
+  }
+
   function statusLabel(statusCode) {
     const code = Number(statusCode);
     if (code === 0) return "Pending";
@@ -285,6 +336,7 @@ function App() {
       <h1>Whistleblower DApp</h1>
       <p>Contract: {CONTRACT_ADDRESS || "(未設定)"}</p>
       <p>建議鏈: Localhost {COMMON_LOCAL_CHAIN_LABEL}</p>
+      <p>多人版建議鏈: Polygon Amoy ({AMOY_CHAIN_ID})</p>
       <p>{networkInfo}</p>
 
       <textarea
@@ -303,6 +355,12 @@ function App() {
         </button>
         <button onClick={repairLocalRpcConnection} style={{ padding: "10px 18px", cursor: "pointer" }}>
           通用本機 RPC 修復
+        </button>
+        <button onClick={switchToAmoyNetwork} style={{ padding: "10px 18px", cursor: "pointer" }}>
+          一鍵切到 Polygon Amoy Testnet
+        </button>
+        <button onClick={openAmoyFaucets} style={{ padding: "10px 18px", cursor: "pointer" }}>
+          開啟 Faucet 領測試幣
         </button>
         <button onClick={fetchAllCases} style={{ padding: "10px 18px", cursor: "pointer" }}>
           查詢所有檢舉
