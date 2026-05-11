@@ -1,145 +1,208 @@
-﻿# Whistleblower DApp (Hardhat + React)
+﻿# Whistleblower Anonymous Reporting System
 
-## Quick Start
+This repository now has three clear areas:
 
-### 1) Install dependencies
+- `whistleblower-semaphore`: main DApp for employee-only anonymous reports using Semaphore.
+- `private-ipfs-cluster`: private IPFS + IPFS Cluster for encrypted report content.
+- `legacy-basic-dapp`: archived early demo. Keep it for reference, but it is not the current main flow.
 
-```bash
-npm install
-cd frontend
-npm install
+Project documents are in `docs/`.
+
+## Recommended Project Structure
+
+```text
+final/
+├─ README.md
+├─ docs/
+│  └─ 實作步驟.pdf
+├─ whistleblower-semaphore/
+│  ├─ contracts/
+│  ├─ frontend/
+│  └─ scripts/
+├─ private-ipfs-cluster/
+│  ├─ docker-compose.yml
+│  └─ scripts/
+└─ legacy-basic-dapp/
+   ├─ contracts/
+   ├─ frontend/
+   └─ scripts/
 ```
 
-### 2) Compile contract
+## Current Main Flow
 
-```bash
-cd ..
+Use this flow for the final anonymous employee whistleblower demo:
+
+1. Start private IPFS.
+2. Start local Hardhat chain or use a shared testnet.
+3. Deploy `EmployeeSemaphoreWhistleblower`.
+4. Configure frontend contract address.
+5. Admin adds employee commitments.
+6. Employee generates Semaphore proof and submits report metadata.
+7. Admin fetches encrypted content from private IPFS by `ipfsCID` and decrypts with MetaMask.
+
+## 1) Start Private IPFS Server
+
+Open Docker Desktop first. Docker CLI commands only work after Docker Desktop / Docker daemon is running.
+
+```powershell
+cd C:\futen\政大\3_區塊鏈\final\private-ipfs-cluster
+powershell -ExecutionPolicy Bypass -File scripts\start-private-network.ps1
+```
+
+Check running containers:
+
+```powershell
+docker ps --filter "name=whistleblower"
+npm run health
+```
+
+Expected containers:
+
+```text
+whistleblower-ipfs0
+whistleblower-ipfs1
+whistleblower-cluster0
+whistleblower-cluster1
+```
+
+Frontend Private IPFS Gateway:
+
+```text
+http://127.0.0.1:8080
+```
+
+Stop IPFS server:
+
+```powershell
+cd C:\futen\政大\3_區塊鏈\final\private-ipfs-cluster
+powershell -ExecutionPolicy Bypass -File scripts\stop-private-network.ps1
+```
+
+Important: run `scripts\generate-secrets.ps1` only once for a private IPFS network. Do not regenerate secrets unless you intentionally want a new private network.
+
+## 2) Start Local Blockchain and Deploy Semaphore Contract
+
+Terminal A:
+
+```powershell
+cd C:\futen\政大\3_區塊鏈\final\whistleblower-semaphore
+npm install
 npm run compile
-```
-
-### 3) Start local blockchain (Terminal A)
-
-```bash
 npm run node
 ```
 
-Keep this terminal running.
+Keep Terminal A running.
 
-### 4) Deploy contract (Terminal B)
+Terminal B:
 
-```bash
+```powershell
+cd C:\futen\政大\3_區塊鏈\final\whistleblower-semaphore
 npm run deploy:local
 ```
 
-Copy the deployed contract address from output, for example:
-`Contract address: 0x...`
+Copy the deployed `EmployeeSemaphoreWhistleblower` address.
 
-### 5) Set frontend contract address
+## 3) Configure and Run Frontend
 
-```bash
-cd frontend
+```powershell
+cd C:\futen\政大\3_區塊鏈\final\whistleblower-semaphore\frontend
+npm install
 copy .env.example .env
 ```
 
-Edit `frontend/.env`:
+Edit `.env`:
 
 ```env
-VITE_CONTRACT_ADDRESS=<deployed_address>
+VITE_CONTRACT_ADDRESS=<EmployeeSemaphoreWhistleblower_address>
 ```
 
-### 6) Run frontend
+Start frontend:
 
-```bash
+```powershell
 npm run dev
 ```
 
-Open the Vite URL shown in terminal.
+## 4) Frontend Checklist
 
-## MetaMask Setup (Local Development)
+- Click `連接錢包`.
+- Click `一鍵連到本機`.
+- Keep Private IPFS Gateway as `http://127.0.0.1:8080`.
+- Click `檢查 IPFS`.
+- Click `檢查合約`.
+- Admin clicks `取得 Admin 加密公鑰`.
+- Admin clicks `設定 Admin 加密公鑰到鏈上`.
+- Employee generates Identity and gives only the commitment to Admin.
+- Admin adds the employee commitment.
+- Employee generates proof and submits anonymous report.
+- Admin loads all reports and decrypts by `ipfsCID`.
 
-Use these values when adding/switching local network:
+## Team Usage
 
-- RPC URL: `http://127.0.0.1:8545`
-- Chain ID: usually `31337` (`0x7a69`) or `1337` (`0x539`)
-- Currency Symbol: `ETH`
+If each teammate runs local Hardhat on their own computer, they are running separate blockchains. They will not see each other's records.
 
-Import one test account private key from `npm run node` output.
+For shared on-chain records across computers:
 
-## Multi-User Setup (Polygon Amoy Testnet)
+- Deploy the Semaphore contract once to a shared testnet such as Polygon Amoy.
+- Share the same deployed contract address.
+- Everyone sets the same `VITE_CONTRACT_ADDRESS`.
+- Everyone switches MetaMask to the same testnet.
 
-If multiple people on different computers need to submit and see the same records, use Polygon Amoy.
+For shared private IPFS:
 
-- Network Name: `Polygon Amoy Testnet`
-- Chain ID: `80002`
-- Chain ID (hex): `0x13882`
-- RPC URL: `https://rpc-amoy.polygon.technology`
-- Currency Symbol: `POL`
-- Explorer: `https://amoy.polygonscan.com`
+- Teammates need Docker Desktop.
+- Teammates need the same `private-ipfs-cluster/.env` and `private-ipfs-cluster/secrets/swarm.key`.
+- Share those two files securely.
+- Do not commit `.env` or `secrets/swarm.key` to GitHub.
 
-Flow:
+## Legacy Basic DApp
 
-1. Deploy contract to Amoy (one person deploys once).
-2. Share the deployed contract address with teammates.
-3. Everyone sets the same `VITE_CONTRACT_ADDRESS` in `frontend/.env`.
-4. In frontend, click `一鍵切到 Polygon Amoy Testnet`.
-5. Everyone gets Amoy test POL from faucet and starts sending reports.
+The early demo has been moved to `legacy-basic-dapp/` instead of being deleted.
 
-## How to Get Required MetaMask Info
+Use it only if you need to review the first basic report contract/UI. It is not the current final architecture.
 
-- RPC URL: from your local node command (`npm run node`), default is `127.0.0.1:8545`
-- Chain ID: 
-  - from `npm run node` logs, or
-  - click `RPC 健康檢查` button in frontend and read `eth_chainId`
-- Account Private Key: from `npm run node` account list (`Private Key` lines)
-- Contract Address: from `npm run deploy:local` output
+To run it:
 
-## Frontend Buttons and What They Do
+```powershell
+cd C:\futen\政大\3_區塊鏈\final\legacy-basic-dapp
+npm install
+npm run compile
+npm run node
+```
 
-- `送出檢舉 (MetaMask)`
-  - Sends `submitReport(report, "dummy_hash_for_test")` transaction via MetaMask.
+Then deploy in another terminal:
 
-- `RPC 健康檢查`
-  - Shows diagnostic info:
-    - `eth_chainId`
-    - `net_version`
-    - `latest block`
-    - current account and balance
-    - whether contract code exists at configured address
-    - `callStatic submitReport` result
+```powershell
+cd C:\futen\政大\3_區塊鏈\final\legacy-basic-dapp
+npm run deploy:local
+```
 
-- `通用本機 RPC 修復`
-  - Auto-detects available local RPC endpoint (`127.0.0.1/localhost`, ports `8545/7545`).
-  - Reads detected chainId from RPC.
-  - Tries to switch MetaMask to that chain.
-  - If chain not found in MetaMask, auto-adds it and then switches.
+And run its frontend:
 
-- `一鍵切到 Polygon Amoy Testnet`
-  - Switches MetaMask to Amoy (`80002`).
-  - If missing, auto-adds Amoy network with official RPC and explorer.
-  - Best for cross-device collaboration (shared on-chain records).
+```powershell
+cd C:\futen\政大\3_區塊鏈\final\legacy-basic-dapp\frontend
+npm install
+npm run dev
+```
 
-- `查詢所有檢舉`
-  - Reads `caseCount` and fetches `cases(1..N)` from contract.
-  - Renders a table with ID, CID/report, content hash, status, and timestamp.
+## Troubleshooting
 
-## Common Troubleshooting
+If Docker Desktop looks like nothing is running:
 
-- If transaction fails after restarting node:
-  - Re-run `npm run deploy:local`
-  - Update `frontend/.env` contract address
-  - Refresh frontend
+```powershell
+docker ps --filter "name=whistleblower"
+```
 
-- If you see RPC errors like `too many errors`:
-  - Click `通用本機 RPC 修復`
-  - Then click `RPC 健康檢查` to verify
+If the four `whistleblower-*` containers show `Up`, IPFS is running even if Docker Desktop UI is on another tab or has a filter.
 
-- If contract is not found (`contract deployed: no`):
-  - You are likely using wrong address or wrong chain
-  - Re-deploy and update `.env`
+If `Check Contract` fails:
 
-## Notes
+- make sure MetaMask is on the same chain as the deployed contract
+- re-run `npm run deploy:local` after restarting Hardhat
+- update `whistleblower-semaphore/frontend/.env`
+- refresh the frontend
 
-- Contract source: `contracts/Whistleblower.sol`
-- Deploy script: `scripts/deploy.js`
-- Frontend main page: `frontend/src/App.jsx`
-- ABI in frontend: `frontend/src/Whistleblower.json`
+If `Check IPFS` fails:
+
+- open Docker Desktop
+- run `private-ipfs-cluster/scripts/start-private-network.ps1`
+- confirm gateway is `http://127.0.0.1:8080`

@@ -1,0 +1,83 @@
+services:
+  ipfs0:
+    image: ipfs/kubo:v0.28.0
+    container_name: whistleblower-ipfs0
+    restart: unless-stopped
+    ports:
+      - "4001:4001"
+      - "5001:5001"
+      - "8080:8080"
+    volumes:
+      - ./data/ipfs0:/data/ipfs
+      - ./secrets/swarm.key:/data/ipfs/swarm.key:ro
+    environment:
+      LIBP2P_FORCE_PNET: "1"
+    networks:
+      - private-ipfs
+
+  ipfs1:
+    image: ipfs/kubo:v0.28.0
+    container_name: whistleblower-ipfs1
+    restart: unless-stopped
+    ports:
+      - "4002:4001"
+      - "5002:5001"
+      - "8081:8080"
+    volumes:
+      - ./data/ipfs1:/data/ipfs
+      - ./secrets/swarm.key:/data/ipfs/swarm.key:ro
+    environment:
+      LIBP2P_FORCE_PNET: "1"
+    networks:
+      - private-ipfs
+
+  cluster0:
+    image: ipfs/ipfs-cluster:v1.0.8
+    container_name: whistleblower-cluster0
+    restart: unless-stopped
+    depends_on:
+      - ipfs0
+    ports:
+      - "9094:9094"
+      - "9095:9095"
+      - "9096:9096"
+    volumes:
+      - ./data/cluster0:/data/ipfs-cluster
+    environment:
+      CLUSTER_PEERNAME: cluster0
+      CLUSTER_SECRET: ${CLUSTER_SECRET}
+      CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/ipfs0/tcp/5001
+      CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS: /ip4/0.0.0.0/tcp/9094
+      CLUSTER_RESTAPI_BASICAUTHCREDENTIALS: ${CLUSTER_RESTAPI_BASICAUTHCREDENTIALS}
+      CLUSTER_CRDT_TRUSTEDPEERS: "*"
+      CLUSTER_MONITORPINGINTERVAL: 2s
+    networks:
+      - private-ipfs
+
+  cluster1:
+    image: ipfs/ipfs-cluster:v1.0.8
+    container_name: whistleblower-cluster1
+    restart: unless-stopped
+    depends_on:
+      - ipfs1
+      - cluster0
+    ports:
+      - "9194:9094"
+      - "9195:9095"
+      - "9196:9096"
+    volumes:
+      - ./data/cluster1:/data/ipfs-cluster
+    environment:
+      CLUSTER_PEERNAME: cluster1
+      CLUSTER_SECRET: ${CLUSTER_SECRET}
+      CLUSTER_IPFSHTTP_NODEMULTIADDRESS: /dns4/ipfs1/tcp/5001
+      CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS: /ip4/0.0.0.0/tcp/9094
+      CLUSTER_RESTAPI_BASICAUTHCREDENTIALS: ${CLUSTER_RESTAPI_BASICAUTHCREDENTIALS}
+      CLUSTER_CRDT_TRUSTEDPEERS: "*"
+      CLUSTER_MONITORPINGINTERVAL: 2s
+    networks:
+      - private-ipfs
+
+networks:
+  private-ipfs:
+    name: whistleblower-private-ipfs

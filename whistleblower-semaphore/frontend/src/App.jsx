@@ -40,6 +40,7 @@ function App() {
   const [proofJson, setProofJson] = useState("");
 
   const [adminEncryptionPubKey, setAdminEncryptionPubKey] = useState("");
+  const [ipfsGateway, setIpfsGateway] = useState("http://127.0.0.1:8080");
   const [reports, setReports] = useState([]);
 
   const canUse = useMemo(() => !!window.ethereum && !!CONTRACT_ADDRESS, []);
@@ -52,7 +53,7 @@ function App() {
         "Admin 再按「設定 Admin 加密公鑰到鏈上」，讓所有員工都能讀到同一把公鑰。",
         "員工產生 Identity，將 commitment 交給 Admin 加入群組。",
         "員工輸入 ipfsCID 與舉報內容，按「產生 Proof + 加密內容」。",
-        "員工送出後，鏈上只保存密文、messageHash、nullifier 與 proof 驗證結果。"
+        "員工送出後，Admin 可用 ipfsCID 從私有 IPFS 抓密文，再用 MetaMask 解密。"
       ],
       adminKeyTitle: "Admin 加密公鑰兩個按鈕",
       adminKey: [
@@ -66,24 +67,24 @@ function App() {
         "commitment 可以交給 Admin 加入群組；privateKey 只能自己保存。",
         "Preview Reporter Commitment 可確認目前舉報者 privateKey 對應哪個 commitment。",
         "Generate Proof + Encrypt 會產生 messageHash、加密舉報內容，並產生 Semaphore proof。",
-        "Submit Anonymous Report 會將 ipfsCID、messageHash、密文與 proof 送上鏈。"
+        "Submit Anonymous Report 只會將 ipfsCID、messageHash 與 proof 送上鏈；密文應放在私有 IPFS。"
       ],
       reportsTitle: "查詢與解密",
       reports: [
         "Admin 與 Employee 都可以查詢鏈上所有舉報。",
         "Employee 只能看到密文與 messageHash，無法看到明文內容。",
-        "Admin 可用 Decrypt 或 Decrypt All 透過 MetaMask 私鑰解密內容。"
+        "Admin 可用 Decrypt 或 Decrypt All 透過 ipfsCID 抓取密文，並用 MetaMask 私鑰解密內容。"
       ]
     },
     en: {
       title: "How to use",
-      intro: "The tool has two roles. Admin manages the decryption endpoint and employee allowlist. Employee generates an anonymous Semaphore proof and submits an encrypted report.",
+      intro: "The tool has two roles. Admin manages the decryption endpoint and employee allowlist. Employee generates an anonymous Semaphore proof and submits the private-IPFS report pointer.",
       quick: [
         "Admin connects wallet and clicks Get Admin Encryption PubKey.",
         "Admin clicks Set Admin Encryption PubKey so the public key is stored on-chain.",
         "Employee generates an identity and gives the commitment to Admin.",
         "Employee enters ipfsCID and report content, then clicks Generate Proof + Encrypt.",
-        "The chain stores ciphertext, messageHash, nullifier, and proof validation result."
+        "Admin can fetch ciphertext from private IPFS by ipfsCID, then decrypt it with MetaMask."
       ],
       adminKeyTitle: "Admin encryption key buttons",
       adminKey: [
@@ -97,13 +98,13 @@ function App() {
         "The commitment can be given to Admin; the privateKey must stay with the employee.",
         "Preview Reporter Commitment shows which commitment the current reporter identity maps to.",
         "Generate Proof + Encrypt computes messageHash, encrypts report content, and creates the Semaphore proof.",
-        "Submit Anonymous Report sends ipfsCID, messageHash, ciphertext, and proof on-chain."
+        "Submit Anonymous Report sends only ipfsCID, messageHash, and proof on-chain. Ciphertext should stay in private IPFS."
       ],
       reportsTitle: "Reports and decryption",
       reports: [
         "Both Admin and Employee can load all on-chain reports.",
         "Employee can only see ciphertext and messageHash, not plaintext.",
-        "Admin can use Decrypt or Decrypt All to decrypt with MetaMask."
+        "Admin can use Decrypt or Decrypt All to fetch ciphertext by ipfsCID and decrypt with MetaMask."
       ]
     }
   }[lang];
@@ -118,6 +119,7 @@ function App() {
       local: "連到本機",
       amoy: "連到 Amoy",
       check: "檢查合約",
+      ipfsCheck: "檢查 IPFS",
       gid: "讀取 Group ID",
       members: "載入成員",
       addEmployee: "加入員工",
@@ -142,6 +144,7 @@ function App() {
       local: "Switch Local",
       amoy: "Switch Amoy",
       check: "Check Contract",
+      ipfsCheck: "Check IPFS",
       gid: "Load Group ID",
       members: "Load Members",
       addEmployee: "Add Employee",
@@ -252,6 +255,37 @@ function App() {
     pushToast("success", "Contract checked");
   }
 
+  async function checkIpfsHealth() {
+    const gateway = ipfsGateway.trim().replace(/\/+$/, "");
+    if (!gateway) throw new Error("請先設定 Private IPFS Gateway");
+
+    const startedAt = performance.now();
+    let gatewayText = "gateway=unreachable";
+    let cidText = "cid=not-tested";
+
+    try {
+      const response = await fetch(gateway, { method: "GET", cache: "no-store" });
+      gatewayText = `gateway=reachable status=${response.status}`;
+    } catch (error) {
+      throw new Error(`IPFS Gateway 無法連線: ${parseErr(error)}`);
+    }
+
+    const cid = ipfsCID.trim();
+    if (cid) {
+      const response = await fetch(`${gateway}/ipfs/${cid}`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`IPFS CID 讀取失敗: status=${response.status}`);
+      }
+      const text = await response.text();
+      cidText = `cid=ok bytes=${text.length}`;
+    }
+
+    const elapsed = Math.round(performance.now() - startedAt);
+    setDiag(`IPFS ${gatewayText} | ${cidText} | gateway=${gateway} | ${elapsed}ms`);
+    setStatus("IPFS checked");
+    pushToast("success", cid ? "IPFS CID reachable" : "IPFS gateway reachable");
+  }
+
   async function loadGroupId() {
     const id = await getReadContract().groupId();
     setGroupId(id.toString());
@@ -358,10 +392,10 @@ function App() {
 
   async function submitAnonymousReport() {
     if (!proofJson.trim()) throw new Error("請先生成 proof");
-    if (!messageHash.trim() || !encryptedReport.trim()) throw new Error("缺少 messageHash 或 encryptedReport");
+    if (!messageHash.trim()) throw new Error("缺少 messageHash");
 
     const proof = JSON.parse(proofJson);
-    const tx = await getSignerContract().submitAnonymousReport(ipfsCID.trim(), messageHash.trim(), encryptedReport.trim(), proof);
+    const tx = await getSignerContract().submitAnonymousReport(ipfsCID.trim(), messageHash.trim(), proof);
     await tx.wait();
     setStatus("Anonymous report submitted");
     pushToast("success", "Report submitted");
@@ -377,7 +411,7 @@ function App() {
         id: Number(r.id),
         ipfsCID: r.ipfsCID,
         messageHash: r.messageHash,
-        encryptedReport: r.encryptedReport,
+        encryptedReport: r.encryptedReport || "",
         timestamp: Number(r.timestamp),
         nullifier: r.nullifier.toString(),
         message: r.message.toString(),
@@ -394,16 +428,38 @@ function App() {
     if (!wallet) throw new Error("請先連接 Admin 錢包");
     const target = reports.find((r) => r.id === reportId);
     if (!target) return;
-    const plain = await window.ethereum.request({ method: "eth_decrypt", params: [target.encryptedReport, wallet] });
+    const encryptedPayload = await fetchEncryptedReportFromIpfs(target);
+    const plain = await window.ethereum.request({ method: "eth_decrypt", params: [encryptedPayload, wallet] });
     setReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, plainText: plain } : r)));
     pushToast("success", `Report #${reportId} decrypted`);
+  }
+
+  async function fetchEncryptedReportFromIpfs(report) {
+    const cid = report.ipfsCID?.trim();
+    const gateway = ipfsGateway.replace(/\/+$/, "");
+
+    if (cid && gateway) {
+      try {
+        const response = await fetch(`${gateway}/ipfs/${cid}`);
+        if (response.ok) {
+          const text = (await response.text()).trim();
+          if (text) return text;
+        }
+      } catch {
+        // Fallback to the legacy on-chain encryptedReport field below.
+      }
+    }
+
+    if (report.encryptedReport) return report.encryptedReport;
+    throw new Error("Cannot fetch encrypted report from IPFS and no on-chain encryptedReport fallback exists.");
   }
 
   async function decryptAll() {
     for (const r of reports) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        const plain = await window.ethereum.request({ method: "eth_decrypt", params: [r.encryptedReport, wallet] });
+        const encryptedPayload = await fetchEncryptedReportFromIpfs(r);
+        const plain = await window.ethereum.request({ method: "eth_decrypt", params: [encryptedPayload, wallet] });
         setReports((prev) => prev.map((x) => (x.id === r.id ? { ...x, plainText: plain } : x)));
       } catch {
         // ignore per-report decrypt failure
@@ -515,9 +571,16 @@ function App() {
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10, marginBottom: 10 }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Btn label={t.check} k="check" onClick={checkContractHealth} disabled={!canUse} />
+                    <Btn label={t.ipfsCheck} k="ipfsCheck" onClick={checkIpfsHealth} />
                     <Btn label={t.gid} k="gid" onClick={loadGroupId} disabled={!canUse} />
                     <Btn label={t.members} k="members" onClick={loadMembersFromEvents} disabled={!canUse} />
                   </div>
+                  <input
+                    value={ipfsGateway}
+                    onChange={(e) => setIpfsGateway(e.target.value)}
+                    placeholder="Private IPFS Gateway, e.g. http://127.0.0.1:8080"
+                    style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginTop: 10 }}
+                  />
                   <div style={{ marginTop: 10, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{diag || "Diag: -"}</div>
                 </div>
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10 }}>
@@ -555,6 +618,12 @@ function App() {
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>Reports</h3>
+                  <input
+                    value={ipfsGateway}
+                    onChange={(e) => setIpfsGateway(e.target.value)}
+                    placeholder="Private IPFS Gateway, e.g. http://127.0.0.1:8080"
+                    style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }}
+                  />
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                     <Btn label={t.loadReports} k="loadReports" onClick={loadAllReports} disabled={!canUse} />
                     <Btn label={t.decryptAll} k="decryptAll" onClick={decryptAll} disabled={!canUse || reports.length === 0} />
@@ -565,7 +634,7 @@ function App() {
                       <div>ipfsCID: {r.ipfsCID}</div>
                       <div>messageHash: {r.messageHash}</div>
                       <div>nullifier: {r.nullifier}</div>
-                      <div>encrypted: {r.encryptedReport.slice(0, 80)}...</div>
+                      <div>encrypted: {r.encryptedReport ? `${r.encryptedReport.slice(0, 80)}...` : "(fetch by ipfsCID)"}</div>
                       <div style={{ marginTop: 6 }}><Btn label={t.decrypt} k={`decrypt_${r.id}`} onClick={() => decryptOne(r.id)} disabled={!canUse} /></div>
                       <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>plain: {r.plainText || "(not decrypted)"}</div>
                     </div>
@@ -609,7 +678,7 @@ function App() {
                       <div><strong>#{r.id}</strong> | {new Date(r.timestamp * 1000).toLocaleString()}</div>
                       <div>ipfsCID: {r.ipfsCID}</div>
                       <div>messageHash: {r.messageHash}</div>
-                      <div>encrypted: {r.encryptedReport.slice(0, 80)}...</div>
+                      <div>encrypted: {r.encryptedReport ? `${r.encryptedReport.slice(0, 80)}...` : "(stored in private IPFS)"}</div>
                       <div>plain: {r.plainText || "(no key / not decrypted)"}</div>
                     </div>
                   )) : <div style={{ marginTop: 8 }}>no reports</div>}

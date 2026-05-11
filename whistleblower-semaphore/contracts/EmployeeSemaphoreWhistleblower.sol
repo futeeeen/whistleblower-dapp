@@ -8,7 +8,6 @@ contract EmployeeSemaphoreWhistleblower {
         uint256 id;
         string ipfsCID;
         string messageHash;
-        string encryptedReport;
         uint256 timestamp;
         uint256 nullifier;
         uint256 message;
@@ -32,7 +31,6 @@ contract EmployeeSemaphoreWhistleblower {
         uint256 indexed message,
         string ipfsCID,
         string messageHash,
-        string encryptedReport,
         uint256 timestamp
     );
 
@@ -68,12 +66,10 @@ contract EmployeeSemaphoreWhistleblower {
     function submitAnonymousReport(
         string calldata ipfsCID,
         string calldata messageHash,
-        string calldata encryptedReport,
         ISemaphore.SemaphoreProof calldata proof
     ) external {
         require(bytes(ipfsCID).length > 0, "Empty ipfsCID");
         require(bytes(messageHash).length > 0, "Empty messageHash");
-        require(bytes(encryptedReport).length > 0, "Empty encryptedReport");
 
         uint256 expectedMessage = uint256(keccak256(abi.encodePacked(ipfsCID, messageHash)));
         require(proof.message == expectedMessage, "Proof message mismatch");
@@ -85,7 +81,6 @@ contract EmployeeSemaphoreWhistleblower {
             id: reportCount,
             ipfsCID: ipfsCID,
             messageHash: messageHash,
-            encryptedReport: encryptedReport,
             timestamp: block.timestamp,
             nullifier: proof.nullifier,
             message: proof.message
@@ -97,7 +92,6 @@ contract EmployeeSemaphoreWhistleblower {
             proof.message,
             ipfsCID,
             messageHash,
-            encryptedReport,
             block.timestamp
         );
     }

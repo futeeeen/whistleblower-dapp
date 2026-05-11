@@ -1,0 +1,5 @@
+data/
+secrets/swarm.key
+.env
+shared/*
+!shared/.gitkeep

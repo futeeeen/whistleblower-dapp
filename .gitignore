@@ -6,3 +6,11 @@ frontend/dist
 .env
 frontend/.env
 steps_extracted.txt
+docs/steps_extracted.txt
+legacy-basic-dapp/node_modules
+legacy-basic-dapp/artifacts
+legacy-basic-dapp/cache
+legacy-basic-dapp/frontend/node_modules
+legacy-basic-dapp/frontend/dist
+legacy-basic-dapp/.env
+legacy-basic-dapp/frontend/.env

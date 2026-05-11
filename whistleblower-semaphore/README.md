@@ -72,6 +72,39 @@ npm install
 npm run dev
 ```
 
+## Start Private IPFS Before Testing Reports
+
+Encrypted report content is expected to live in the private IPFS network. After rebooting, open Docker Desktop first and start IPFS:
+
+```powershell
+cd C:\futen\政大\3_區塊鏈\final\private-ipfs-cluster
+powershell -ExecutionPolicy Bypass -File scripts\start-private-network.ps1
+```
+
+Check that IPFS is running:
+
+```powershell
+docker ps --filter "name=whistleblower"
+npm run health
+```
+
+Expected containers:
+
+```text
+whistleblower-ipfs0
+whistleblower-ipfs1
+whistleblower-cluster0
+whistleblower-cluster1
+```
+
+In the frontend Control Panel, use:
+
+```text
+Private IPFS Gateway: http://127.0.0.1:8080
+```
+
+Click `檢查 IPFS / Check IPFS` before testing Admin decrypt.
+
 ## Frontend Buttons (What each does)
 
 - `Connect Wallet`
@@ -86,6 +119,11 @@ npm run dev
 - `Check Contract`
   - diagnostics: `chainId`, contract code existence, `owner`, `groupId`.
   - helps detect wrong chain / wrong contract address.
+
+- `Check IPFS`
+  - checks whether the configured Private IPFS Gateway is reachable.
+  - if an `ipfsCID` is filled, it also tries to fetch `/ipfs/<CID>`.
+  - helps detect whether Docker/IPFS is running before Admin decrypts.
 
 - `Load Group ID`
   - reads `groupId()` from contract.
@@ -109,7 +147,17 @@ npm run dev
   - employee generates ZK proof using identity + group members + `(ipfsCID, contentHash)`.
 
 - `Submit Anonymous Report`
-  - submits report + proof to contract for on-chain verification.
+  - submits `ipfsCID`, `messageHash`, and proof to contract for on-chain verification.
+  - encrypted report content should stay in private IPFS, not on-chain.
+
+- `Load All Reports`
+  - reads all on-chain report metadata.
+  - both Admin and Employee can see `ipfsCID`, `messageHash`, `nullifier`, and timestamp.
+
+- `Decrypt`
+  - Admin fetches encrypted content from private IPFS by `ipfsCID`.
+  - MetaMask decrypts locally with the Admin wallet private key.
+  - Employees can see the CID/hash, but cannot read plaintext without the Admin private key.
 
 ## Verification Visualization Panel
 
@@ -128,10 +176,20 @@ Not revealed by proof itself:
 ## `ipfsCID` and `contentHash`
 
 - `ipfsCID`: pointer to encrypted/off-chain report content on IPFS.
-- `contentHash`: integrity checksum of original content (recommended `sha256:<hex>`).
+- `messageHash`: integrity checksum used by the proof message. The UI computes it from the report content and binds it with `ipfsCID`.
 
 Contract binds proof to both values by requiring:
-- `proof.message == keccak256(ipfsCID, contentHash)`
+- `proof.message == keccak256(ipfsCID, messageHash)`
+
+The contract stores only metadata and proof-related values. The encrypted report body should be stored in private IPFS.
+
+## Team Usage Notes
+
+- Local Hardhat is private to each computer. If two teammates each run `npm run node`, they are running two different blockchains.
+- To see the same on-chain reports across computers, deploy the contract once to a shared testnet such as Polygon Amoy and share the same contract address.
+- To share the same private IPFS network, teammates need the same `private-ipfs-cluster/.env` and `private-ipfs-cluster/secrets/swarm.key`.
+- Keep IPFS secrets private. Do not commit them to GitHub.
+- Docker Desktop must be running before `start-private-network.ps1` can start the IPFS containers.
 
 ## Test Scenarios (Membership Validation)
 
