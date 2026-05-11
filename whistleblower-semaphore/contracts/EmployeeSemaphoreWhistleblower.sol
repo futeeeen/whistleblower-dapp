@@ -7,7 +7,8 @@ contract EmployeeSemaphoreWhistleblower {
     struct Report {
         uint256 id;
         string ipfsCID;
-        string contentHash;
+        string messageHash;
+        string encryptedReport;
         uint256 timestamp;
         uint256 nullifier;
         uint256 message;
@@ -18,16 +19,20 @@ contract EmployeeSemaphoreWhistleblower {
     uint256 public groupId;
     uint256 public reportCount;
 
+    string public adminEncryptionPublicKey;
+
     mapping(uint256 => Report) public reports;
     mapping(uint256 => bool) public memberCommitmentExists;
 
     event EmployeeMemberAdded(uint256 indexed identityCommitment);
+    event AdminEncryptionPublicKeyUpdated(string publicKey);
     event AnonymousReportSubmitted(
         uint256 indexed reportId,
         uint256 indexed nullifier,
         uint256 indexed message,
         string ipfsCID,
-        string contentHash,
+        string messageHash,
+        string encryptedReport,
         uint256 timestamp
     );
 
@@ -47,6 +52,12 @@ contract EmployeeSemaphoreWhistleblower {
         owner = newOwner;
     }
 
+    function setAdminEncryptionPublicKey(string calldata publicKey) external onlyOwner {
+        require(bytes(publicKey).length > 0, "Empty key");
+        adminEncryptionPublicKey = publicKey;
+        emit AdminEncryptionPublicKeyUpdated(publicKey);
+    }
+
     function addEmployeeMember(uint256 identityCommitment) external onlyOwner {
         require(!memberCommitmentExists[identityCommitment], "Member already added");
         semaphore.addMember(groupId, identityCommitment);
@@ -56,10 +67,15 @@ contract EmployeeSemaphoreWhistleblower {
 
     function submitAnonymousReport(
         string calldata ipfsCID,
-        string calldata contentHash,
+        string calldata messageHash,
+        string calldata encryptedReport,
         ISemaphore.SemaphoreProof calldata proof
     ) external {
-        uint256 expectedMessage = uint256(keccak256(abi.encodePacked(ipfsCID, contentHash)));
+        require(bytes(ipfsCID).length > 0, "Empty ipfsCID");
+        require(bytes(messageHash).length > 0, "Empty messageHash");
+        require(bytes(encryptedReport).length > 0, "Empty encryptedReport");
+
+        uint256 expectedMessage = uint256(keccak256(abi.encodePacked(ipfsCID, messageHash)));
         require(proof.message == expectedMessage, "Proof message mismatch");
 
         semaphore.validateProof(groupId, proof);
@@ -68,7 +84,8 @@ contract EmployeeSemaphoreWhistleblower {
         reports[reportCount] = Report({
             id: reportCount,
             ipfsCID: ipfsCID,
-            contentHash: contentHash,
+            messageHash: messageHash,
+            encryptedReport: encryptedReport,
             timestamp: block.timestamp,
             nullifier: proof.nullifier,
             message: proof.message
@@ -79,7 +96,8 @@ contract EmployeeSemaphoreWhistleblower {
             proof.nullifier,
             proof.message,
             ipfsCID,
-            contentHash,
+            messageHash,
+            encryptedReport,
             block.timestamp
         );
     }

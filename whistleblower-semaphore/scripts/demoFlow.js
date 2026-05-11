@@ -38,10 +38,11 @@ async function main() {
   const group = new Group([commitment]);
 
   const ipfsCID = "bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
-  const contentHash = "sha256:demo-content-hash";
+  const messageHash = "sha256:demo-content-hash";
+  const encryptedReport = "encrypted:demo-ciphertext";
   const message = hre.ethers.BigNumber.from(
     hre.ethers.utils.keccak256(
-      hre.ethers.utils.solidityPack(["string", "string"], [ipfsCID, contentHash])
+      hre.ethers.utils.solidityPack(["string", "string"], [ipfsCID, messageHash])
     )
   ).toString();
   const scope = hre.ethers.BigNumber.from(groupId).toString();
@@ -57,11 +58,11 @@ async function main() {
     points: proof.points
   };
 
-  await (await app.submitAnonymousReport(ipfsCID, contentHash, solidityProof)).wait();
+  await (await app.submitAnonymousReport(ipfsCID, messageHash, encryptedReport, solidityProof)).wait();
   console.log("First anonymous report submitted");
 
   try {
-    await (await app.submitAnonymousReport(ipfsCID, contentHash, solidityProof)).wait();
+    await (await app.submitAnonymousReport(ipfsCID, messageHash, encryptedReport, solidityProof)).wait();
     console.log("Unexpected: second report with same nullifier succeeded");
   } catch (err) {
     console.log("Second submission rejected as expected (nullifier replay blocked)");
