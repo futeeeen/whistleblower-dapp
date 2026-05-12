@@ -106,6 +106,16 @@ Private IPFS Gateway: http://127.0.0.1:8080
 
 Click `檢查 IPFS / Check IPFS` before testing Admin decrypt.
 
+For burner-wallet employee submission, the frontend also needs the IPFS Cluster REST API so it can upload encrypted payloads automatically:
+
+```text
+IPFS Cluster API: http://127.0.0.1:9094
+IPFS Cluster user: admin
+IPFS Cluster password: see private-ipfs-cluster/.env
+```
+
+Do not commit or share the Cluster password publicly. This direct browser upload is for the PoC/private lab environment. A production SaaS version should usually hide Cluster credentials behind a backend API or gateway.
+
 ## Frontend Buttons (What each does)
 
 The PoC frontend has three tabs:
@@ -164,27 +174,33 @@ The PoC frontend has three tabs:
   - admin adds commitment into the selected `reportGroupId`.
   - the same employee commitment can be added to different report groups when policies allow it.
 
-- `Generate Proof Off-chain`
-  - employee generates ZK proof using identity + group members + report metadata.
-  - proof message is bound to:
+- `Preload proof artifacts`
+  - loads Semaphore proving artifacts (`wasm` / `zkey`) before the employee submits a report.
+  - this reduces the perceived wait time when the employee prepares the anonymous credential.
+
+- `Prepare anonymous credential`
+  - employee generates ZK proof using identity + group members.
+  - the proof is generated before the report content is submitted.
+  - the credential proves eligibility for:
     - `companyId`
     - `reportGroupId`
-    - `ipfsCID`
-    - `contentHash/messageHash`
     - `period`
     - `reportSlot`
-  - proof scope is bound to:
-    - `companyId`
-    - `reportGroupId`
-    - `period`
-    - `reportSlot`
+  - the proof message is bound to a credential tag:
+    - `REPORT_CREDENTIAL_V1`
+  - the proof is not bound to `ipfsCID` / `contentHash`, so the employee can prepare the credential before writing or uploading the report.
+
+- `Encrypt + Upload Report`
+  - in MetaMask mode, employee manually fills `ipfsCID` after uploading encrypted content separately.
+  - in burner mode, employee only fills report content; the frontend encrypts with the selected company's Admin public key, uploads ciphertext to Private IPFS, fills `ipfsCID`, and computes `messageHash` automatically.
 
 - `Submit Anonymous Report`
   - submits `companyId`, `reportGroupId`, `ipfsCID`, `messageHash`, `period`, `reportSlot`, and proof to contract for on-chain verification.
+  - reuses the already prepared anonymous credential; it does not regenerate the ZK proof.
   - encrypted report content should stay in private IPFS, not on-chain.
   - supports two submit modes:
     - `Use MetaMask wallet`: sender is the connected MetaMask account.
-    - `Use anonymous burner wallet`: frontend generates a temporary wallet locally and sends a `gasPrice=0` transaction to the configured RPC.
+    - `Use anonymous burner wallet`: frontend generates a temporary wallet locally and sends a `gasPrice=0` transaction to the configured RPC. Employee read/submit flow does not require MetaMask in this mode.
   - burner mode is intended for local Hardhat / future permissioned-chain zero-gas environments.
   - burner mode is not suitable for Amoy because Amoy is a public testnet and still requires POL for gas.
 
@@ -214,10 +230,13 @@ Not revealed by proof itself:
 ## `ipfsCID` and `contentHash`
 
 - `ipfsCID`: pointer to encrypted/off-chain report content on IPFS.
-- `messageHash`: integrity checksum used by the proof message. The UI computes it from the report content and binds it with `ipfsCID`.
+- `messageHash`: integrity checksum for the report payload. In burner mode it is computed from the encrypted payload uploaded to IPFS.
 
-Contract binds proof to both values by requiring:
-- `proof.message == keccak256(companyId, reportGroupId, ipfsCID, messageHash, period, reportSlot)`
+The anonymous credential proof is intentionally not bound to `ipfsCID` or `messageHash`. This allows the employee to prepare the proof before writing the report:
+
+```text
+proof.message == keccak256(companyId, reportGroupId, period, reportSlot, "REPORT_CREDENTIAL_V1")
+```
 
 The contract also binds the nullifier scope:
 
@@ -226,6 +245,12 @@ proof.scope == keccak256(companyId, reportGroupId, period, reportSlot)
 ```
 
 The contract stores only metadata and proof-related values. The encrypted report body should be stored in private IPFS.
+
+Design tradeoff:
+
+- Benefit: proof can be generated earlier, improving user experience during report submission.
+- Cost: `ipfsCID` / `messageHash` are stored and auditable on-chain, but they are no longer part of the ZK proof message.
+- The nullifier still prevents duplicate submissions for the same `companyId + reportGroupId + period + reportSlot`.
 
 ## Multi-Company / Multi-Group Notes
 
@@ -292,7 +317,17 @@ When using `Use anonymous burner wallet`, the frontend:
 
 1. creates a temporary wallet in the browser,
 2. connects it to the configured RPC,
-3. sends the report transaction with `gasPrice: 0`.
+3. reads the selected company by `companyId`,
+4. encrypts the report content with that company's Admin public key,
+5. uploads the encrypted payload to Private IPFS through IPFS Cluster,
+6. computes `contentHash/messageHash`,
+7. sends the report transaction with `gasPrice: 0`.
+
+This means the Employee does not need MetaMask for the burner flow. The Employee still needs:
+
+- a valid Semaphore identity that was added to the selected report group,
+- the zero-gas RPC URL, for example `http://127.0.0.1:8545`,
+- private IPFS Cluster API settings from the lab environment.
 
 This models the future permissioned-chain design:
 

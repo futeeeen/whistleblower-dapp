@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
 import { Buffer } from "buffer";
 import { Identity } from "@semaphore-protocol/identity";
@@ -11,6 +11,7 @@ const LOCAL_CHAIN_HEX = "0x7a69";
 const LOCAL_RPC_URL = "http://127.0.0.1:8545";
 const AMOY_CHAIN_HEX = "0x13882";
 const AMOY_RPC_URL = "https://rpc-amoy.polygon.technology";
+const REPORT_CREDENTIAL_MESSAGE_TAG = "REPORT_CREDENTIAL_V1";
 
 function App() {
   const [activeTab, setActiveTab] = useState("admin");
@@ -35,6 +36,9 @@ function App() {
   const [period, setPeriod] = useState("2026-Q1");
   const [reportSlot, setReportSlot] = useState("1");
   const [proofScope, setProofScope] = useState("");
+  const [proofArtifacts, setProofArtifacts] = useState(null);
+  const [proofArtifactsStatus, setProofArtifactsStatus] = useState("not loaded");
+  const [preparedCredentialContext, setPreparedCredentialContext] = useState("");
 
   const [identityExport, setIdentityExport] = useState("");
   const [identityCommitment, setIdentityCommitment] = useState("");
@@ -49,72 +53,77 @@ function App() {
   const [submitMode, setSubmitMode] = useState("metamask");
   const [burnerRpcUrl, setBurnerRpcUrl] = useState(LOCAL_RPC_URL);
   const [lastBurnerAddress, setLastBurnerAddress] = useState("");
+  const [ipfsClusterApi, setIpfsClusterApi] = useState("http://127.0.0.1:9094");
+  const [ipfsClusterUser, setIpfsClusterUser] = useState("admin");
+  const [ipfsClusterPassword, setIpfsClusterPassword] = useState("");
 
   const [adminEncryptionPubKey, setAdminEncryptionPubKey] = useState("");
   const [ipfsGateway, setIpfsGateway] = useState("http://127.0.0.1:8080");
   const [reports, setReports] = useState([]);
 
   const canUse = useMemo(() => !!window.ethereum && !!CONTRACT_ADDRESS, []);
+  const canRead = !!CONTRACT_ADDRESS && (!!window.ethereum || submitMode === "burner");
+  const credentialContext = `${companyId.trim() || "-"}:${reportGroupId.trim() || "-"}:${period.trim() || "-"}:${reportSlot.trim() || "-"}`;
   const helpCopy = {
     zh: {
       title: "使用說明",
-      intro: "這個工具分成 Admin 與 Employee 兩種角色。Admin 負責建立可解密的收件端與員工白名單，Employee 則用匿名身分產生 proof 並送出加密舉報。",
+      intro: "這個工具分成 Admin 與 Employee。Admin 管理公司、群組、員工 commitment 與解密公鑰；Employee 先準備匿名憑證，再送出加密舉報。",
       quick: [
-        "Admin 先連接錢包，按「取得 Admin 加密公鑰」。",
-        "Admin 再按「設定 Admin 加密公鑰到鏈上」，讓所有員工都能讀到同一把公鑰。",
-        "員工產生 Identity，將 commitment 交給 Admin 加入群組。",
-        "員工輸入 ipfsCID 與舉報內容，按「產生 Proof + 加密內容」。",
-        "員工送出後，Admin 可用 ipfsCID 從私有 IPFS 抓密文，再用 MetaMask 解密。"
+        "Admin 連接錢包，建立公司與舉報主題。",
+        "Admin 取得並設定 Admin 加密公鑰到鏈上。",
+        "Employee 產生 Identity，只把 commitment 交給 Admin 加入群組。",
+        "Employee 進入頁面後先預載 proving artifacts，並產生匿名憑證。",
+        "真正舉報時只加密內容、上傳 Private IPFS，然後使用已準備好的憑證送出。"
       ],
-      adminKeyTitle: "Admin 加密公鑰兩個按鈕",
+      adminKeyTitle: "Admin 加密公鑰按鈕",
       adminKey: [
         "取得 Admin 加密公鑰：向 MetaMask 取得目前 Admin 帳號的公開加密公鑰。這不是私鑰，可以公開。",
-        "設定 Admin 加密公鑰到鏈上：把這把公鑰寫入合約，讓員工前端自動使用它加密舉報內容。",
-        "員工送出時用 Admin 公鑰加密；只有 Admin 的 MetaMask 私鑰可以透過解密按鈕看到明文。"
+        "設定 Admin 加密公鑰到鏈上：把公鑰寫入合約，讓員工前端依 companyId 自動加密。",
+        "只有 Admin 的 MetaMask 私鑰可以解密 IPFS 上的密文內容。"
       ],
       employeeTitle: "Employee 流程",
       employee: [
-        "Generate Identity 會產生匿名身分 privateKey(base64) 與 commitment。",
-        "commitment 可以交給 Admin 加入群組；privateKey 只能自己保存。",
-        "Preview Reporter Commitment 可確認目前舉報者 privateKey 對應哪個 commitment。",
-        "Generate Proof + Encrypt 會產生 messageHash、加密舉報內容，並產生 Semaphore proof。",
-        "Submit Anonymous Report 只會將 ipfsCID、messageHash 與 proof 送上鏈；密文應放在私有 IPFS。"
+        "Generate Identity 會產生 privateKey(base64) 與 commitment。",
+        "Preload proof artifacts 會先載入 proving wasm/zkey，減少送出時等待。",
+        "Prepare anonymous credential 會先產生資格 proof，證明自己屬於目前 company/group/period/slot。",
+        "Encrypt + upload report 只負責加密內容、計算 hash，burner 模式會自動上傳 Private IPFS。",
+        "Submit Anonymous Report 使用已準備好的匿名憑證，不會重新產生 proof。"
       ],
-      reportsTitle: "查詢與解密",
+      reportsTitle: "舉報與解密",
       reports: [
-        "Admin 與 Employee 都可以查詢鏈上所有舉報。",
-        "Employee 只能看到密文與 messageHash，無法看到明文內容。",
-        "Admin 可用 Decrypt 或 Decrypt All 透過 ipfsCID 抓取密文，並用 MetaMask 私鑰解密內容。"
+        "Admin 與 Employee 都可以查詢鏈上 metadata。",
+        "Employee 只能看到 ipfsCID、hash、nullifier 等資料，不能看到明文。",
+        "Admin 可用 Decrypt / Decrypt All 從 IPFS 取回密文並解密。"
       ]
     },
     en: {
       title: "How to use",
-      intro: "The tool has two roles. Admin manages the decryption endpoint and employee allowlist. Employee generates an anonymous Semaphore proof and submits the private-IPFS report pointer.",
+      intro: "The tool has Admin and Employee roles. Admin manages companies, groups, commitments, and encryption keys. Employee prepares an anonymous credential before submitting an encrypted report.",
       quick: [
-        "Admin connects wallet and clicks Get Admin Encryption PubKey.",
-        "Admin clicks Set Admin Encryption PubKey so the public key is stored on-chain.",
-        "Employee generates an identity and gives the commitment to Admin.",
-        "Employee enters ipfsCID and report content, then clicks Generate Proof + Encrypt.",
-        "Admin can fetch ciphertext from private IPFS by ipfsCID, then decrypt it with MetaMask."
+        "Admin connects wallet, creates company and report group.",
+        "Admin gets and sets the Admin encryption public key on-chain.",
+        "Employee generates an identity and gives only the commitment to Admin.",
+        "Employee preloads proving artifacts and prepares an anonymous credential first.",
+        "During report submission, the frontend only encrypts/uploads the report and reuses the prepared credential."
       ],
       adminKeyTitle: "Admin encryption key buttons",
       adminKey: [
         "Get Admin Encryption PubKey asks MetaMask for the current Admin account encryption public key. It is public, not private.",
-        "Set Admin Encryption PubKey writes that key to the contract so employees encrypt to the same Admin key.",
-        "Employees encrypt with the Admin public key; only the Admin MetaMask private key can decrypt."
+        "Set Admin Encryption PubKey writes that key to the contract so employees encrypt to the selected company's Admin key.",
+        "Only the Admin MetaMask private key can decrypt the ciphertext from IPFS."
       ],
       employeeTitle: "Employee flow",
       employee: [
         "Generate Identity creates a privateKey(base64) and commitment.",
-        "The commitment can be given to Admin; the privateKey must stay with the employee.",
-        "Preview Reporter Commitment shows which commitment the current reporter identity maps to.",
-        "Generate Proof + Encrypt computes messageHash, encrypts report content, and creates the Semaphore proof.",
-        "Submit Anonymous Report sends only ipfsCID, messageHash, and proof on-chain. Ciphertext should stay in private IPFS."
+        "Preload proof artifacts loads proving wasm/zkey early to reduce submit-time waiting.",
+        "Prepare anonymous credential proves membership for the current company/group/period/slot.",
+        "Encrypt + upload report encrypts content, computes hash, and auto-uploads to Private IPFS in burner mode.",
+        "Submit Anonymous Report reuses the prepared credential and does not regenerate proof."
       ],
       reportsTitle: "Reports and decryption",
       reports: [
-        "Both Admin and Employee can load all on-chain reports.",
-        "Employee can only see ciphertext and messageHash, not plaintext.",
+        "Both Admin and Employee can load on-chain metadata.",
+        "Employee can only see ipfsCID, hash, nullifier, and metadata, not plaintext.",
         "Admin can use Decrypt or Decrypt All to fetch ciphertext by ipfsCID and decrypt with MetaMask."
       ]
     }
@@ -139,10 +148,10 @@ function App() {
       createGroup: "建立舉報主題",
       genIdentity: "產生 Identity",
       importIdentity: "匯入 Identity",
-      previewReporter: "預覽舉報者 Commitment",
+      previewReporter: "預覽 Reporter Commitment",
       getAdminPub: "取得 Admin 加密公鑰",
       setAdminPub: "設定 Admin 加密公鑰到鏈上",
-      genProof: "產生 Proof + 加密內容",
+      genProof: "加密並上傳舉報",
       submit: "送出匿名舉報",
       submitMode: "送出方式",
       metamaskMode: "使用 MetaMask 錢包",
@@ -173,7 +182,7 @@ function App() {
       previewReporter: "Preview Reporter Commitment",
       getAdminPub: "Get Admin Encryption PubKey",
       setAdminPub: "Set Admin Encryption PubKey",
-      genProof: "Generate Proof + Encrypt",
+      genProof: "Encrypt + Upload Report",
       submit: "Submit Anonymous Report",
       submitMode: "Submit Mode",
       metamaskMode: "Use MetaMask wallet",
@@ -212,8 +221,70 @@ function App() {
 
   function getProvider() { return new ethers.providers.Web3Provider(window.ethereum); }
   function getSignerContract() { return new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getProvider().getSigner()); }
-  function getReadContract() { return new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getProvider()); }
   function getBurnerProvider() { return new ethers.providers.JsonRpcProvider(burnerRpcUrl.trim() || LOCAL_RPC_URL); }
+  function getReadProvider() { return submitMode === "burner" ? getBurnerProvider() : getProvider(); }
+  function getReadContract() { return new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getReadProvider()); }
+
+  function getProofDepth() {
+    if (!members.length) return 1;
+    const group = new Group(members);
+    return group.depth || 1;
+  }
+
+  function buildCredentialScope() {
+    return ethers.BigNumber.from(
+      ethers.utils.keccak256(ethers.utils.solidityPack(
+        ["uint256", "uint256", "string", "uint256"],
+        [companyId.trim(), reportGroupId.trim(), period.trim(), reportSlot.trim()]
+      ))
+    ).toString();
+  }
+
+  function buildCredentialMessage() {
+    return ethers.BigNumber.from(
+      ethers.utils.keccak256(ethers.utils.solidityPack(
+        ["uint256", "uint256", "string", "uint256", "string"],
+        [companyId.trim(), reportGroupId.trim(), period.trim(), reportSlot.trim(), REPORT_CREDENTIAL_MESSAGE_TAG]
+      ))
+    ).toString();
+  }
+
+  async function preloadProofArtifacts() {
+    const depth = getProofDepth();
+    setProofArtifactsStatus(`loading depth=${depth}`);
+    const { maybeGetSnarkArtifacts, Project } = await import("@zk-kit/artifacts");
+    const artifacts = await maybeGetSnarkArtifacts(Project.SEMAPHORE, {
+      parameters: [depth],
+      version: "4.13.0"
+    });
+
+    // Warm the browser cache before the user starts proof generation.
+    const warmCache = async (url) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`artifact fetch failed: ${response.status}`);
+        return response;
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+    await Promise.all([warmCache(artifacts.wasm), warmCache(artifacts.zkey)]);
+    setProofArtifacts(artifacts);
+    setProofArtifactsStatus(`ready depth=${depth}`);
+    setStatus(`Proof artifacts ready depth=${depth}`);
+    pushToast("success", "Proof artifacts ready");
+    return artifacts;
+  }
+
+  useEffect(() => {
+    if (activeTab !== "employee" || proofArtifacts || proofArtifactsStatus.startsWith("loading")) return;
+    preloadProofArtifacts().catch((error) => {
+      const msg = parseErr(error);
+      setProofArtifactsStatus(`failed: ${msg}`);
+    });
+  }, [activeTab, members.length]);
 
   async function sha256Hex(input) {
     const bytes = new TextEncoder().encode(input);
@@ -228,8 +299,35 @@ function App() {
     return hex;
   }
 
+  async function uploadEncryptedReportToIpfs(encryptedPayload) {
+    const api = ipfsClusterApi.trim().replace(/\/+$/, "");
+    if (!api) throw new Error("Please enter IPFS Cluster API URL");
+    if (!ipfsClusterUser.trim() || !ipfsClusterPassword.trim()) {
+      throw new Error("Please enter IPFS Cluster user/password from private-ipfs-cluster/.env");
+    }
+
+    const form = new FormData();
+    form.append("file", new Blob([encryptedPayload], { type: "text/plain" }), "encrypted-report.txt");
+
+    const auth = btoa(`${ipfsClusterUser.trim()}:${ipfsClusterPassword}`);
+    const response = await fetch(`${api}/add?cid-version=1&replication-min=1&replication-max=2`, {
+      method: "POST",
+      headers: { Authorization: `Basic ${auth}` },
+      body: form
+    });
+
+    if (!response.ok) {
+      throw new Error(`IPFS upload failed: status=${response.status} ${await response.text()}`);
+    }
+
+    const result = await response.json();
+    const cid = result.cid?.["/"] || result.cid || result.Cid || result.Name || "";
+    if (!cid) throw new Error("IPFS upload succeeded but no CID returned");
+    return cid;
+  }
+
   async function connectWallet() {
-    if (!window.ethereum) throw new Error("請先安裝 MetaMask");
+    if (!window.ethereum) throw new Error("隢?摰? MetaMask");
     const [account] = await window.ethereum.request({ method: "eth_requestAccounts" });
     setWallet(account || "");
     setStatus("Wallet connected");
@@ -237,7 +335,7 @@ function App() {
   }
 
   async function switchToLocal() {
-    if (!window.ethereum) throw new Error("請先安裝 MetaMask");
+    if (!window.ethereum) throw new Error("隢?摰? MetaMask");
     try {
       await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: LOCAL_CHAIN_HEX }] });
     } catch (e) {
@@ -250,7 +348,7 @@ function App() {
   }
 
   async function switchToAmoy() {
-    if (!window.ethereum) throw new Error("請先安裝 MetaMask");
+    if (!window.ethereum) throw new Error("隢?摰? MetaMask");
     try {
       await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: AMOY_CHAIN_HEX }] });
     } catch (e) {
@@ -263,8 +361,8 @@ function App() {
   }
 
   async function checkContractHealth() {
-    if (!canUse) throw new Error("請先設定合約地址並安裝 MetaMask");
-    const provider = getProvider();
+    if (!canRead) throw new Error("隢?閮剖????啣?嚗???burner 璅∪?閮剖? RPC");
+    const provider = getReadProvider();
     const net = await provider.getNetwork();
     const code = await provider.getCode(CONTRACT_ADDRESS);
     const c = getReadContract();
@@ -281,7 +379,7 @@ function App() {
 
   async function checkIpfsHealth() {
     const gateway = ipfsGateway.trim().replace(/\/+$/, "");
-    if (!gateway) throw new Error("請先設定 Private IPFS Gateway");
+    if (!gateway) throw new Error("隢?閮剖? Private IPFS Gateway");
 
     const startedAt = performance.now();
     let gatewayText = "gateway=unreachable";
@@ -291,14 +389,14 @@ function App() {
       const response = await fetch(gateway, { method: "GET", cache: "no-store" });
       gatewayText = `gateway=reachable status=${response.status}`;
     } catch (error) {
-      throw new Error(`IPFS Gateway 無法連線: ${parseErr(error)}`);
+      throw new Error(`IPFS Gateway ?⊥????: ${parseErr(error)}`);
     }
 
     const cid = ipfsCID.trim();
     if (cid) {
       const response = await fetch(`${gateway}/ipfs/${cid}`, { cache: "no-store" });
       if (!response.ok) {
-        throw new Error(`IPFS CID 讀取失敗: status=${response.status}`);
+        throw new Error(`IPFS CID 霈?仃?? status=${response.status}`);
       }
       const text = await response.text();
       cidText = `cid=ok bytes=${text.length}`;
@@ -327,7 +425,7 @@ function App() {
   }
 
   async function adminGetEncryptionPubKey() {
-    if (!wallet) throw new Error("請先連接錢包");
+    if (!wallet) throw new Error("Please connect wallet first");
     const pub = await window.ethereum.request({ method: "eth_getEncryptionPublicKey", params: [wallet] });
     setAdminEncryptionPubKey(pub);
     setStatus("Got admin encryption public key");
@@ -335,7 +433,7 @@ function App() {
   }
 
   async function adminSetEncryptionPubKey() {
-    if (!adminEncryptionPubKey.trim()) throw new Error("請先取得或輸入公鑰");
+    if (!adminEncryptionPubKey.trim()) throw new Error("Please get or enter Admin encryption public key first");
     const tx = await getSignerContract().setAdminEncryptionPublicKey(adminEncryptionPubKey.trim());
     await tx.wait();
     setStatus("Admin encryption public key set on-chain");
@@ -367,8 +465,8 @@ function App() {
 
   async function adminAddEmployee() {
     const commitment = newMemberCommitment.trim();
-    if (!commitment) throw new Error("請輸入 employee commitment");
-    if (!reportGroupId.trim()) throw new Error("請輸入 reportGroupId");
+    if (!commitment) throw new Error("隢撓??employee commitment");
+    if (!reportGroupId.trim()) throw new Error("隢撓??reportGroupId");
     const tx = await getSignerContract().addEmployeeMember(reportGroupId.trim(), commitment);
     await tx.wait();
     setStatus("Employee added");
@@ -377,7 +475,7 @@ function App() {
 
   async function adminCreateCompany() {
     const name = companyName.trim();
-    if (!name) throw new Error("請輸入 company name");
+    if (!name) throw new Error("隢撓??company name");
     const adminAddress = wallet || await getProvider().getSigner().getAddress();
     const tx = await getSignerContract().createCompany(name, adminEncryptionPubKey.trim(), adminAddress);
     const receipt = await tx.wait();
@@ -389,10 +487,10 @@ function App() {
   }
 
   async function adminCreateReportGroup() {
-    if (!companyId.trim()) throw new Error("請輸入 companyId");
-    if (!topicName.trim()) throw new Error("請輸入 topic name");
+    if (!companyId.trim()) throw new Error("隢撓??companyId");
+    if (!topicName.trim()) throw new Error("隢撓??topic name");
     const maxReports = Number(maxReportsPerMember || "0");
-    if (!Number.isInteger(maxReports) || maxReports <= 0) throw new Error("maxReportsPerMember 必須大於 0");
+    if (!Number.isInteger(maxReports) || maxReports <= 0) throw new Error("maxReportsPerMember 敹?憭扳 0");
     const now = Math.floor(Date.now() / 1000);
     const end = now + 60 * 60 * 24 * 365;
     const tx = await getSignerContract().createReportGroup(companyId.trim(), topicName.trim(), maxReports, now, end);
@@ -407,43 +505,25 @@ function App() {
     pushToast("success", "Report group created");
   }
 
-  async function generateProofAndEncrypt() {
-    if (!reporterIdentityExport.trim()) throw new Error("請輸入 reporter identity");
-    if (!ipfsCID.trim() || !reportPlaintext.trim()) throw new Error("請輸入 ipfsCID 與舉報內容");
-    if (!members.length) throw new Error("請先載入群組成員");
-    if (!companyId.trim() || !reportGroupId.trim() || !period.trim() || !reportSlot.trim()) throw new Error("請輸入 companyId、reportGroupId、period、reportSlot");
+  async function prepareAnonymousCredential() {
+    if (!reporterIdentityExport.trim()) throw new Error("Please enter reporter identity");
+    if (!members.length) throw new Error("Please load group members first");
+    if (!companyId.trim() || !reportGroupId.trim() || !period.trim() || !reportSlot.trim()) {
+      throw new Error("Please enter companyId, reportGroupId, period, and reportSlot");
+    }
 
     const c = getReadContract();
     const rg = await c.reportGroups(reportGroupId.trim());
     const gid = rg.semaphoreGroupId.toString();
-    const adminPub = await c.adminEncryptionPublicKey();
-    if (!adminPub) throw new Error("Admin 公鑰尚未設定，請先由 Admin 設定");
-
-    const messageHashHex = await sha256Hex(reportPlaintext.trim());
-    const computedMessageHash = `sha256:${messageHashHex}`;
-    setMessageHash(computedMessageHash);
-
-    const encrypted = await encryptWithAdminPubKey(adminPub, reportPlaintext.trim());
-    setEncryptedReport(encrypted);
 
     const identity = Identity.import(reporterIdentityExport.trim());
     setReporterCommitmentPreview(identity.commitment.toString());
 
     const group = new Group(members);
-    const scope = ethers.BigNumber.from(
-      ethers.utils.keccak256(ethers.utils.solidityPack(
-        ["uint256", "uint256", "string", "uint256"],
-        [companyId.trim(), reportGroupId.trim(), period.trim(), reportSlot.trim()]
-      ))
-    ).toString();
-    const message = ethers.BigNumber.from(
-      ethers.utils.keccak256(ethers.utils.solidityPack(
-        ["uint256", "uint256", "string", "string", "string", "uint256"],
-        [companyId.trim(), reportGroupId.trim(), ipfsCID.trim(), computedMessageHash, period.trim(), reportSlot.trim()]
-      ))
-    ).toString();
-
-    const proof = await generateProof(identity, group, message, scope);
+    const scope = buildCredentialScope();
+    const message = buildCredentialMessage();
+    const artifacts = proofArtifacts || await preloadProofArtifacts();
+    const proof = await generateProof(identity, group, message, scope, getProofDepth(), artifacts);
 
     const solidityProof = {
       merkleTreeDepth: proof.merkleTreeDepth,
@@ -455,15 +535,52 @@ function App() {
     };
 
     setProofJson(JSON.stringify(solidityProof, null, 2));
+    setPreparedCredentialContext(credentialContext);
     setGroupId(gid);
     setProofScope(scope);
-    setStatus("Proof generated and report encrypted");
-    pushToast("success", "Proof generated + encrypted");
+    setStatus("Anonymous credential prepared");
+    pushToast("success", "Anonymous credential prepared");
+  }
+
+  async function generateProofAndEncrypt() {
+    if (!reportPlaintext.trim()) throw new Error("Please enter report content");
+    if (!proofJson.trim() || preparedCredentialContext !== credentialContext) {
+      throw new Error("Please prepare an anonymous credential for the current company/group/period/slot first");
+    }
+    if (submitMode !== "burner" && !ipfsCID.trim()) {
+      throw new Error("Please enter ipfsCID, or switch to burner wallet for automatic upload");
+    }
+    if (!companyId.trim() || !reportGroupId.trim()) throw new Error("Please enter companyId and reportGroupId");
+
+    const c = getReadContract();
+    const company = await c.companies(companyId.trim());
+    const adminPub = company.adminPublicKey || await c.adminEncryptionPublicKey();
+    if (!adminPub) throw new Error("Admin public key is not set");
+
+    const encrypted = await encryptWithAdminPubKey(adminPub, reportPlaintext.trim());
+    setEncryptedReport(encrypted);
+    let finalIpfsCID = ipfsCID.trim();
+    let hashSource = reportPlaintext.trim();
+
+    if (submitMode === "burner") {
+      finalIpfsCID = await uploadEncryptedReportToIpfs(encrypted);
+      setIpfsCID(finalIpfsCID);
+      hashSource = encrypted;
+    }
+
+    const messageHashHex = await sha256Hex(hashSource);
+    const computedMessageHash = `sha256:${messageHashHex}`;
+    setMessageHash(computedMessageHash);
+    setStatus("Report encrypted and payload prepared");
+    pushToast("success", "Report encrypted + uploaded");
   }
 
   async function submitAnonymousReport() {
-    if (!proofJson.trim()) throw new Error("請先生成 proof");
-    if (!messageHash.trim()) throw new Error("缺少 messageHash");
+    if (!proofJson.trim()) throw new Error("Please prepare an anonymous credential first");
+    if (preparedCredentialContext !== credentialContext) {
+      throw new Error("Anonymous credential does not match the current company/group/period/slot. Please regenerate it.");
+    }
+    if (!messageHash.trim()) throw new Error("Missing messageHash");
 
     const proof = JSON.parse(proofJson);
     const request = {
@@ -480,7 +597,7 @@ function App() {
       const provider = getBurnerProvider();
       const network = await provider.getNetwork();
       if (network.chainId === 80002) {
-        throw new Error("Amoy 是公開測試網，burner wallet 仍需要 POL。請在本機/許可鏈零 gas 環境使用 burner 模式。");
+        throw new Error("Amoy is a public testnet. Burner wallet still needs POL there. Use burner mode only on local/permissioned zero-gas chains.");
       }
       const burner = ethers.Wallet.createRandom().connect(provider);
       setLastBurnerAddress(burner.address);
@@ -525,7 +642,7 @@ function App() {
   }
 
   async function decryptOne(reportId) {
-    if (!wallet) throw new Error("請先連接 Admin 錢包");
+    if (!wallet) throw new Error("隢??? Admin ?Ｗ?");
     const target = reports.find((r) => r.id === reportId);
     if (!target) return;
     const encryptedPayload = await fetchEncryptedReportFromIpfs(target);
@@ -583,7 +700,7 @@ function App() {
       disabled={disabled || !!loading[k]}
       onClick={() => withLoading(k, () => safeRun(onClick))}
     >
-      {loading[k] ? "⏳ " : ""}{label}
+      {loading[k] ? "??" : ""}{label}
     </button>
   );
 
@@ -657,7 +774,7 @@ function App() {
           <aside style={{ borderRight: "1px solid #e5e7eb", padding: 12, background: "#f8fafc" }}>
             <div style={{ display: "flex", justifyContent: showPanel ? "space-between" : "center", marginBottom: 10 }}>
               {showPanel ? <strong>{t.control}</strong> : null}
-              <button onClick={() => setShowPanel((v) => !v)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", background: "#fff", cursor: "pointer" }}>☰</button>
+              <button onClick={() => setShowPanel((v) => !v)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", background: "#fff", cursor: "pointer" }}>{showPanel ? "收合" : "展開"}</button>
             </div>
             {showPanel ? (
               <>
@@ -670,10 +787,10 @@ function App() {
                 </div>
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10, marginBottom: 10 }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Btn label={t.check} k="check" onClick={checkContractHealth} disabled={!canUse} />
+                    <Btn label={t.check} k="check" onClick={checkContractHealth} disabled={!canRead} />
                     <Btn label={t.ipfsCheck} k="ipfsCheck" onClick={checkIpfsHealth} />
-                    <Btn label={t.gid} k="gid" onClick={loadGroupId} disabled={!canUse} />
-                    <Btn label={t.members} k="members" onClick={loadMembersFromEvents} disabled={!canUse} />
+                    <Btn label={t.gid} k="gid" onClick={loadGroupId} disabled={!canRead} />
+                    <Btn label={t.members} k="members" onClick={loadMembersFromEvents} disabled={!canRead} />
                   </div>
                   <input
                     value={ipfsGateway}
@@ -786,10 +903,16 @@ function App() {
                     <input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="period, e.g. 2026-Q1" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
                     <input value={reportSlot} onChange={(e) => setReportSlot(e.target.value)} placeholder="reportSlot, e.g. 1" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
                   </div>
-                  <input value={ipfsCID} onChange={(e) => setIpfsCID(e.target.value)} placeholder="ipfsCID" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                  <input value={ipfsCID} onChange={(e) => setIpfsCID(e.target.value)} placeholder={submitMode === "burner" ? "ipfsCID (burner mode auto-fills after IPFS upload)" : "ipfsCID"} style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
                   <div style={{ height: 8 }} />
-                  <textarea value={reportPlaintext} onChange={(e) => setReportPlaintext(e.target.value)} placeholder="舉報內容 / report content" style={{ width: "100%", height: 96, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
-                  <div style={{ marginTop: 8 }}><Btn label={t.genProof} k="genProof" onClick={generateProofAndEncrypt} primary disabled={!canUse} /></div>
+                  <textarea value={reportPlaintext} onChange={(e) => setReportPlaintext(e.target.value)} placeholder="??批捆 / report content" style={{ width: "100%", height: 96, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                    <Btn label="Preload proof artifacts" k="preloadProof" onClick={preloadProofArtifacts} disabled={!canRead} />
+                    <Btn label="Prepare anonymous credential" k="prepareCredential" onClick={prepareAnonymousCredential} primary disabled={!canRead} />
+                    <Btn label="Encrypt + upload report" k="genProof" onClick={generateProofAndEncrypt} disabled={!canRead} />
+                  </div>
+                  <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>proof artifacts: {proofArtifactsStatus}</div>
+                  <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>prepared credential: {preparedCredentialContext || "-"}</div>
                   <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>messageHash: {messageHash || "-"}</div>
                   <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>proof scope: {proofScope || "-"}</div>
                   <textarea value={encryptedReport} onChange={(e) => setEncryptedReport(e.target.value)} placeholder="encrypted report (hex)" style={{ width: "100%", height: 80, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
@@ -814,9 +937,13 @@ function App() {
                           placeholder="Zero-gas RPC URL, e.g. http://127.0.0.1:8545"
                           style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }}
                         />
-                        <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
-                          Burner wallet 會在瀏覽器本機臨時產生，只負責送 gasPrice=0 交易；舉報資格仍由 ZK proof 決定。Amoy 仍需 POL，不適用 burner 免 gas。
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 8 }}>
+                          <input value={ipfsClusterApi} onChange={(e) => setIpfsClusterApi(e.target.value)} placeholder="IPFS Cluster API, e.g. http://127.0.0.1:9094" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                          <input value={ipfsClusterUser} onChange={(e) => setIpfsClusterUser(e.target.value)} placeholder="user" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                          <input value={ipfsClusterPassword} onChange={(e) => setIpfsClusterPassword(e.target.value)} placeholder="password from private-ipfs-cluster/.env" type="password" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
                         </div>
+                        <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+                          Burner wallet ??汗?冽璈????芾?鞎祇?gasPrice=0 鈭斗?嚗??梯??潔???ZK proof 瘙箏??迨璅∪???砍?祇??銝西???喳?? Private IPFS?moy 隞? POL嚗??拍 burner ??gas??                        </div>
                         <div style={{ marginTop: 6, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", overflowWrap: "anywhere" }}>
                           last burner: {lastBurnerAddress || "-"}
                         </div>
@@ -825,7 +952,7 @@ function App() {
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Btn label={t.submit} k="submit" onClick={submitAnonymousReport} primary disabled={!CONTRACT_ADDRESS || (submitMode === "metamask" && !canUse)} />
-                    <Btn label={t.loadReports} k="loadReportsEmp" onClick={loadAllReports} disabled={!canUse} />
+                    <Btn label={t.loadReports} k="loadReportsEmp" onClick={loadAllReports} disabled={!canRead} />
                   </div>
                   {reports.length > 0 ? reports.map((r) => (
                     <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginTop: 8, overflowWrap: "anywhere" }}>

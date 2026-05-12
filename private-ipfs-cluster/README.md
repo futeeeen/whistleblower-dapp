@@ -125,6 +125,23 @@ Use this value in the DApp Control Panel:
 Private IPFS Gateway: http://127.0.0.1:8080
 ```
 
+For Employee burner-wallet mode, also fill the IPFS Cluster upload settings in the Employee tab:
+
+```text
+IPFS Cluster API: http://127.0.0.1:9094
+IPFS Cluster user: admin
+IPFS Cluster password: value from .env
+```
+
+The Docker Compose config enables CORS for the local Vite frontend:
+
+```text
+http://localhost:5173
+http://127.0.0.1:5173
+```
+
+After changing CORS or Cluster credentials, restart this network with `npm start`.
+
 Then click:
 
 ```text

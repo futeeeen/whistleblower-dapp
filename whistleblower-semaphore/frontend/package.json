@@ -13,6 +13,7 @@
     "@semaphore-protocol/group": "^4.14.2",
     "@semaphore-protocol/identity": "^4.14.2",
     "@semaphore-protocol/proof": "^4.14.2",
+    "@zk-kit/artifacts": "^2.0.1",
     "buffer": "^6.0.3",
     "ethers": "^5.7.2",
     "react": "^18.3.1",

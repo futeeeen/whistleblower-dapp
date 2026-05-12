@@ -1,4 +1,5 @@
 const hre = require("hardhat");
+const REPORT_CREDENTIAL_MESSAGE_TAG = "REPORT_CREDENTIAL_V1";
 
 async function main() {
   const { Identity } = await import("@semaphore-protocol/identity");
@@ -46,8 +47,8 @@ async function main() {
   const message = hre.ethers.BigNumber.from(
     hre.ethers.utils.keccak256(
       hre.ethers.utils.solidityPack(
-        ["uint256", "uint256", "string", "string", "string", "uint256"],
-        [companyId, reportGroupId, ipfsCID, contentHash, period, reportSlot]
+        ["uint256", "uint256", "string", "uint256", "string"],
+        [companyId, reportGroupId, period, reportSlot, REPORT_CREDENTIAL_MESSAGE_TAG]
       )
     )
   ).toString();

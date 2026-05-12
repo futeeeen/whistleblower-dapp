@@ -4,6 +4,8 @@ pragma solidity ^0.8.23;
 import "@semaphore-protocol/contracts/interfaces/ISemaphore.sol";
 
 contract EmployeeSemaphoreWhistleblower {
+    string private constant REPORT_CREDENTIAL_MESSAGE_TAG = "REPORT_CREDENTIAL_V1";
+
     struct Company {
         uint256 id;
         string companyName;
@@ -143,7 +145,7 @@ contract EmployeeSemaphoreWhistleblower {
         require(!usedNullifiers[proof.nullifier], "Nullifier already used");
 
         uint256 expectedScope = uint256(keccak256(abi.encodePacked(request.companyId, request.reportGroupId, request.period, request.reportSlot)));
-        uint256 expectedMessage = uint256(keccak256(abi.encodePacked(request.companyId, request.reportGroupId, request.ipfsCID, request.contentHash, request.period, request.reportSlot)));
+        uint256 expectedMessage = uint256(keccak256(abi.encodePacked(request.companyId, request.reportGroupId, request.period, request.reportSlot, REPORT_CREDENTIAL_MESSAGE_TAG)));
         require(proof.scope == expectedScope, "Proof scope mismatch");
         require(proof.message == expectedMessage, "Proof message mismatch");
 
