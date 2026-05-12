@@ -27,6 +27,14 @@ function App() {
   const [newMemberCommitment, setNewMemberCommitment] = useState("");
   const [members, setMembers] = useState([]);
   const [groupId, setGroupId] = useState("");
+  const [companyId, setCompanyId] = useState("1");
+  const [companyName, setCompanyName] = useState("");
+  const [reportGroupId, setReportGroupId] = useState("1");
+  const [topicName, setTopicName] = useState("");
+  const [maxReportsPerMember, setMaxReportsPerMember] = useState("1");
+  const [period, setPeriod] = useState("2026-Q1");
+  const [reportSlot, setReportSlot] = useState("1");
+  const [proofScope, setProofScope] = useState("");
 
   const [identityExport, setIdentityExport] = useState("");
   const [identityCommitment, setIdentityCommitment] = useState("");
@@ -38,6 +46,9 @@ function App() {
   const [messageHash, setMessageHash] = useState("");
   const [encryptedReport, setEncryptedReport] = useState("");
   const [proofJson, setProofJson] = useState("");
+  const [submitMode, setSubmitMode] = useState("metamask");
+  const [burnerRpcUrl, setBurnerRpcUrl] = useState(LOCAL_RPC_URL);
+  const [lastBurnerAddress, setLastBurnerAddress] = useState("");
 
   const [adminEncryptionPubKey, setAdminEncryptionPubKey] = useState("");
   const [ipfsGateway, setIpfsGateway] = useState("http://127.0.0.1:8080");
@@ -113,6 +124,7 @@ function App() {
     zh: {
       title: "Semaphore 員工匿名舉報系統",
       control: "控制面板",
+      saasAdmin: "SaaS Admin",
       admin: "Admin",
       employee: "Employee",
       connect: "連接錢包",
@@ -123,6 +135,8 @@ function App() {
       gid: "讀取 Group ID",
       members: "載入成員",
       addEmployee: "加入員工",
+      createCompany: "建立公司",
+      createGroup: "建立舉報主題",
       genIdentity: "產生 Identity",
       importIdentity: "匯入 Identity",
       previewReporter: "預覽舉報者 Commitment",
@@ -130,6 +144,9 @@ function App() {
       setAdminPub: "設定 Admin 加密公鑰到鏈上",
       genProof: "產生 Proof + 加密內容",
       submit: "送出匿名舉報",
+      submitMode: "送出方式",
+      metamaskMode: "使用 MetaMask 錢包",
+      burnerMode: "使用匿名 burner wallet",
       loadReports: "查詢所有鏈上舉報",
       decrypt: "解密",
       decryptAll: "全部解密",
@@ -138,6 +155,7 @@ function App() {
     en: {
       title: "Semaphore Employee Whistleblower",
       control: "Control Panel",
+      saasAdmin: "SaaS Admin",
       admin: "Admin",
       employee: "Employee",
       connect: "Connect Wallet",
@@ -148,6 +166,8 @@ function App() {
       gid: "Load Group ID",
       members: "Load Members",
       addEmployee: "Add Employee",
+      createCompany: "Create Company",
+      createGroup: "Create Report Group",
       genIdentity: "Generate Identity",
       importIdentity: "Import Identity",
       previewReporter: "Preview Reporter Commitment",
@@ -155,6 +175,9 @@ function App() {
       setAdminPub: "Set Admin Encryption PubKey",
       genProof: "Generate Proof + Encrypt",
       submit: "Submit Anonymous Report",
+      submitMode: "Submit Mode",
+      metamaskMode: "Use MetaMask wallet",
+      burnerMode: "Use anonymous burner wallet",
       loadReports: "Load All Reports",
       decrypt: "Decrypt",
       decryptAll: "Decrypt All",
@@ -190,6 +213,7 @@ function App() {
   function getProvider() { return new ethers.providers.Web3Provider(window.ethereum); }
   function getSignerContract() { return new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getProvider().getSigner()); }
   function getReadContract() { return new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getProvider()); }
+  function getBurnerProvider() { return new ethers.providers.JsonRpcProvider(burnerRpcUrl.trim() || LOCAL_RPC_URL); }
 
   async function sha256Hex(input) {
     const bytes = new TextEncoder().encode(input);
@@ -287,17 +311,19 @@ function App() {
   }
 
   async function loadGroupId() {
-    const id = await getReadContract().groupId();
-    setGroupId(id.toString());
-    setStatus("Group ID loaded");
+    const rg = await getReadContract().reportGroups(reportGroupId || "1");
+    setGroupId(rg.semaphoreGroupId.toString());
+    setCompanyId(rg.companyId.toString());
+    setStatus("Report group loaded");
   }
 
   async function loadMembersFromEvents() {
     const c = getReadContract();
-    const logs = await c.queryFilter(c.filters.EmployeeMemberAdded(), 0, "latest");
+    const filter = reportGroupId ? c.filters.EmployeeMemberAdded(reportGroupId, null) : c.filters.EmployeeMemberAdded();
+    const logs = await c.queryFilter(filter, 0, "latest");
     const list = logs.map((l) => l.args.identityCommitment.toString());
     setMembers(list);
-    setStatus(`Loaded ${list.length} members`);
+    setStatus(`Loaded ${list.length} members for reportGroupId=${reportGroupId || "all"}`);
   }
 
   async function adminGetEncryptionPubKey() {
@@ -342,19 +368,54 @@ function App() {
   async function adminAddEmployee() {
     const commitment = newMemberCommitment.trim();
     if (!commitment) throw new Error("請輸入 employee commitment");
-    const tx = await getSignerContract().addEmployeeMember(commitment);
+    if (!reportGroupId.trim()) throw new Error("請輸入 reportGroupId");
+    const tx = await getSignerContract().addEmployeeMember(reportGroupId.trim(), commitment);
     await tx.wait();
     setStatus("Employee added");
     pushToast("success", "Employee added");
+  }
+
+  async function adminCreateCompany() {
+    const name = companyName.trim();
+    if (!name) throw new Error("請輸入 company name");
+    const adminAddress = wallet || await getProvider().getSigner().getAddress();
+    const tx = await getSignerContract().createCompany(name, adminEncryptionPubKey.trim(), adminAddress);
+    const receipt = await tx.wait();
+    const evt = receipt.events?.find((e) => e.event === "CompanyCreated");
+    const id = evt?.args?.companyId?.toString();
+    if (id) setCompanyId(id);
+    setStatus(`Company created${id ? `: ${id}` : ""}`);
+    pushToast("success", "Company created");
+  }
+
+  async function adminCreateReportGroup() {
+    if (!companyId.trim()) throw new Error("請輸入 companyId");
+    if (!topicName.trim()) throw new Error("請輸入 topic name");
+    const maxReports = Number(maxReportsPerMember || "0");
+    if (!Number.isInteger(maxReports) || maxReports <= 0) throw new Error("maxReportsPerMember 必須大於 0");
+    const now = Math.floor(Date.now() / 1000);
+    const end = now + 60 * 60 * 24 * 365;
+    const tx = await getSignerContract().createReportGroup(companyId.trim(), topicName.trim(), maxReports, now, end);
+    const receipt = await tx.wait();
+    const evt = receipt.events?.find((e) => e.event === "ReportGroupCreated");
+    const id = evt?.args?.reportGroupId?.toString();
+    const semaphoreId = evt?.args?.semaphoreGroupId?.toString();
+    if (id) setReportGroupId(id);
+    if (semaphoreId) setGroupId(semaphoreId);
+    setMembers([]);
+    setStatus(`Report group created${id ? `: ${id}` : ""}`);
+    pushToast("success", "Report group created");
   }
 
   async function generateProofAndEncrypt() {
     if (!reporterIdentityExport.trim()) throw new Error("請輸入 reporter identity");
     if (!ipfsCID.trim() || !reportPlaintext.trim()) throw new Error("請輸入 ipfsCID 與舉報內容");
     if (!members.length) throw new Error("請先載入群組成員");
+    if (!companyId.trim() || !reportGroupId.trim() || !period.trim() || !reportSlot.trim()) throw new Error("請輸入 companyId、reportGroupId、period、reportSlot");
 
     const c = getReadContract();
-    const gid = (await c.groupId()).toString();
+    const rg = await c.reportGroups(reportGroupId.trim());
+    const gid = rg.semaphoreGroupId.toString();
     const adminPub = await c.adminEncryptionPublicKey();
     if (!adminPub) throw new Error("Admin 公鑰尚未設定，請先由 Admin 設定");
 
@@ -369,11 +430,20 @@ function App() {
     setReporterCommitmentPreview(identity.commitment.toString());
 
     const group = new Group(members);
+    const scope = ethers.BigNumber.from(
+      ethers.utils.keccak256(ethers.utils.solidityPack(
+        ["uint256", "uint256", "string", "uint256"],
+        [companyId.trim(), reportGroupId.trim(), period.trim(), reportSlot.trim()]
+      ))
+    ).toString();
     const message = ethers.BigNumber.from(
-      ethers.utils.keccak256(ethers.utils.solidityPack(["string", "string"], [ipfsCID.trim(), computedMessageHash]))
+      ethers.utils.keccak256(ethers.utils.solidityPack(
+        ["uint256", "uint256", "string", "string", "string", "uint256"],
+        [companyId.trim(), reportGroupId.trim(), ipfsCID.trim(), computedMessageHash, period.trim(), reportSlot.trim()]
+      ))
     ).toString();
 
-    const proof = await generateProof(identity, group, message, gid);
+    const proof = await generateProof(identity, group, message, scope);
 
     const solidityProof = {
       merkleTreeDepth: proof.merkleTreeDepth,
@@ -386,6 +456,7 @@ function App() {
 
     setProofJson(JSON.stringify(solidityProof, null, 2));
     setGroupId(gid);
+    setProofScope(scope);
     setStatus("Proof generated and report encrypted");
     pushToast("success", "Proof generated + encrypted");
   }
@@ -395,10 +466,33 @@ function App() {
     if (!messageHash.trim()) throw new Error("缺少 messageHash");
 
     const proof = JSON.parse(proofJson);
-    const tx = await getSignerContract().submitAnonymousReport(ipfsCID.trim(), messageHash.trim(), proof);
+    const request = {
+      companyId: companyId.trim(),
+      reportGroupId: reportGroupId.trim(),
+      ipfsCID: ipfsCID.trim(),
+      contentHash: messageHash.trim(),
+      period: period.trim(),
+      reportSlot: reportSlot.trim()
+    };
+    let tx;
+
+    if (submitMode === "burner") {
+      const provider = getBurnerProvider();
+      const network = await provider.getNetwork();
+      if (network.chainId === 80002) {
+        throw new Error("Amoy 是公開測試網，burner wallet 仍需要 POL。請在本機/許可鏈零 gas 環境使用 burner 模式。");
+      }
+      const burner = ethers.Wallet.createRandom().connect(provider);
+      setLastBurnerAddress(burner.address);
+      const c = new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, burner);
+      tx = await c.submitAnonymousReport(request, proof, { gasPrice: 0 });
+    } else {
+      tx = await getSignerContract().submitAnonymousReport(request, proof);
+    }
+
     await tx.wait();
-    setStatus("Anonymous report submitted");
-    pushToast("success", "Report submitted");
+    setStatus(`Anonymous report submitted via ${submitMode === "burner" ? "burner wallet" : "MetaMask"}`);
+    pushToast("success", submitMode === "burner" ? "Report submitted by burner wallet" : "Report submitted");
   }
 
   async function loadAllReports() {
@@ -409,12 +503,18 @@ function App() {
       const r = await c.reports(i);
       list.push({
         id: Number(r.id),
+        companyId: r.companyId.toString(),
+        reportGroupId: r.reportGroupId.toString(),
         ipfsCID: r.ipfsCID,
-        messageHash: r.messageHash,
+        messageHash: r.contentHash || r.messageHash,
+        period: r.period || "",
+        reportSlot: r.reportSlot?.toString?.() || "",
         encryptedReport: r.encryptedReport || "",
         timestamp: Number(r.timestamp),
         nullifier: r.nullifier.toString(),
         message: r.message.toString(),
+        scope: r.scope?.toString?.() || "",
+        submittedBy: r.submittedBy || "",
         plainText: ""
       });
     }
@@ -595,16 +695,34 @@ function App() {
 
           <main style={{ padding: 16 }}>
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <button onClick={() => setActiveTab("saasAdmin")} style={{ border: "1px solid #cbd5e1", borderRadius: 999, padding: "8px 12px", background: activeTab === "saasAdmin" ? "#111827" : "#fff", color: activeTab === "saasAdmin" ? "#fff" : "#111827", cursor: "pointer", fontWeight: 700 }}>{t.saasAdmin}</button>
               <button onClick={() => setActiveTab("admin")} style={{ border: "1px solid #cbd5e1", borderRadius: 999, padding: "8px 12px", background: activeTab === "admin" ? "#111827" : "#fff", color: activeTab === "admin" ? "#fff" : "#111827", cursor: "pointer", fontWeight: 700 }}>{t.admin}</button>
               <button onClick={() => setActiveTab("employee")} style={{ border: "1px solid #cbd5e1", borderRadius: 999, padding: "8px 12px", background: activeTab === "employee" ? "#111827" : "#fff", color: activeTab === "employee" ? "#fff" : "#111827", cursor: "pointer", fontWeight: 700 }}>{t.employee}</button>
             </div>
 
-            {activeTab === "admin" ? (
+            {activeTab === "saasAdmin" ? (
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                  <h3 style={{ marginTop: 0 }}>{t.admin}: {t.addEmployee}</h3>
+                  <h3 style={{ marginTop: 0 }}>SaaS Admin: Company / Group Onboarding</h3>
+                  <p style={{ color: "#64748b", marginTop: 0 }}>PoC version: platform operator creates companies and report groups here.</p>
+                  <input value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="companyId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
+                  <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="new company name" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
+                  <div style={{ marginBottom: 12 }}><Btn label={t.createCompany} k="createCompany" onClick={adminCreateCompany} disabled={!canUse} /></div>
+                  <input value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="reportGroupId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
+                  <input value={topicName} onChange={(e) => setTopicName(e.target.value)} placeholder="topic name, e.g. financial fraud" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
+                  <input value={maxReportsPerMember} onChange={(e) => setMaxReportsPerMember(e.target.value)} placeholder="max reports per member" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
+                  <div style={{ marginBottom: 12 }}><Btn label={t.createGroup} k="createGroup" onClick={adminCreateReportGroup} disabled={!canUse} /></div>
+                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>companyId: {companyId || "-"} | reportGroupId: {reportGroupId || "-"} | Semaphore groupId: {groupId || "-"}</div>
+                </div>
+              </div>
+            ) : activeTab === "admin" ? (
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
+                  <h3>{t.admin}: {t.addEmployee}</h3>
+                  <input value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="reportGroupId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
                   <input value={newMemberCommitment} onChange={(e) => setNewMemberCommitment(e.target.value)} placeholder="employee identity commitment" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
                   <div style={{ marginTop: 8 }}><Btn label={t.addEmployee} k="addEmployee" onClick={adminAddEmployee} primary disabled={!canUse} /></div>
+                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>reportGroupId: {reportGroupId || "-"} | Semaphore groupId: {groupId || "-"}</div>
                 </div>
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
@@ -631,9 +749,13 @@ function App() {
                   {reports.length === 0 ? <div>no reports</div> : reports.map((r) => (
                     <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginBottom: 8, overflowWrap: "anywhere" }}>
                       <div><strong>#{r.id}</strong> | {new Date(r.timestamp * 1000).toLocaleString()}</div>
+                      <div>companyId: {r.companyId} | reportGroupId: {r.reportGroupId}</div>
+                      <div>period: {r.period} | slot: {r.reportSlot}</div>
                       <div>ipfsCID: {r.ipfsCID}</div>
                       <div>messageHash: {r.messageHash}</div>
                       <div>nullifier: {r.nullifier}</div>
+                      <div>scope: {r.scope}</div>
+                      <div>sender: {r.submittedBy}</div>
                       <div>encrypted: {r.encryptedReport ? `${r.encryptedReport.slice(0, 80)}...` : "(fetch by ipfsCID)"}</div>
                       <div style={{ marginTop: 6 }}><Btn label={t.decrypt} k={`decrypt_${r.id}`} onClick={() => decryptOne(r.id)} disabled={!canUse} /></div>
                       <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>plain: {r.plainText || "(not decrypted)"}</div>
@@ -658,26 +780,63 @@ function App() {
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>Step 2: Proof + Encryption</h3>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                    <input value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="companyId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                    <input value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="reportGroupId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                    <input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="period, e.g. 2026-Q1" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                    <input value={reportSlot} onChange={(e) => setReportSlot(e.target.value)} placeholder="reportSlot, e.g. 1" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                  </div>
                   <input value={ipfsCID} onChange={(e) => setIpfsCID(e.target.value)} placeholder="ipfsCID" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
                   <div style={{ height: 8 }} />
                   <textarea value={reportPlaintext} onChange={(e) => setReportPlaintext(e.target.value)} placeholder="舉報內容 / report content" style={{ width: "100%", height: 96, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
                   <div style={{ marginTop: 8 }}><Btn label={t.genProof} k="genProof" onClick={generateProofAndEncrypt} primary disabled={!canUse} /></div>
                   <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>messageHash: {messageHash || "-"}</div>
+                  <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>proof scope: {proofScope || "-"}</div>
                   <textarea value={encryptedReport} onChange={(e) => setEncryptedReport(e.target.value)} placeholder="encrypted report (hex)" style={{ width: "100%", height: 80, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
                   <textarea value={proofJson} onChange={(e) => setProofJson(e.target.value)} placeholder="proof json" style={{ width: "100%", height: 160, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
                 </div>
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>Step 3: Submit + View</h3>
+                  <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginBottom: 10, background: "#f8fafc" }}>
+                    <div style={{ fontWeight: 700, marginBottom: 8 }}>{t.submitMode}</div>
+                    <label style={{ display: "block", marginBottom: 6 }}>
+                      <input type="radio" checked={submitMode === "metamask"} onChange={() => setSubmitMode("metamask")} /> {t.metamaskMode}
+                    </label>
+                    <label style={{ display: "block", marginBottom: 8 }}>
+                      <input type="radio" checked={submitMode === "burner"} onChange={() => setSubmitMode("burner")} /> {t.burnerMode}
+                    </label>
+                    {submitMode === "burner" ? (
+                      <>
+                        <input
+                          value={burnerRpcUrl}
+                          onChange={(e) => setBurnerRpcUrl(e.target.value)}
+                          placeholder="Zero-gas RPC URL, e.g. http://127.0.0.1:8545"
+                          style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }}
+                        />
+                        <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+                          Burner wallet 會在瀏覽器本機臨時產生，只負責送 gasPrice=0 交易；舉報資格仍由 ZK proof 決定。Amoy 仍需 POL，不適用 burner 免 gas。
+                        </div>
+                        <div style={{ marginTop: 6, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", overflowWrap: "anywhere" }}>
+                          last burner: {lastBurnerAddress || "-"}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Btn label={t.submit} k="submit" onClick={submitAnonymousReport} primary disabled={!canUse} />
+                    <Btn label={t.submit} k="submit" onClick={submitAnonymousReport} primary disabled={!CONTRACT_ADDRESS || (submitMode === "metamask" && !canUse)} />
                     <Btn label={t.loadReports} k="loadReportsEmp" onClick={loadAllReports} disabled={!canUse} />
                   </div>
                   {reports.length > 0 ? reports.map((r) => (
                     <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginTop: 8, overflowWrap: "anywhere" }}>
                       <div><strong>#{r.id}</strong> | {new Date(r.timestamp * 1000).toLocaleString()}</div>
+                      <div>companyId: {r.companyId} | reportGroupId: {r.reportGroupId}</div>
+                      <div>period: {r.period} | slot: {r.reportSlot}</div>
                       <div>ipfsCID: {r.ipfsCID}</div>
                       <div>messageHash: {r.messageHash}</div>
+                      <div>nullifier: {r.nullifier}</div>
+                      <div>scope: {r.scope}</div>
+                      <div>sender: {r.submittedBy}</div>
                       <div>encrypted: {r.encryptedReport ? `${r.encryptedReport.slice(0, 80)}...` : "(stored in private IPFS)"}</div>
                       <div>plain: {r.plainText || "(no key / not decrypted)"}</div>
                     </div>

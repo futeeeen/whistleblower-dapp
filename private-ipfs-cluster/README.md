@@ -38,7 +38,35 @@ Keep both private. Any machine that should join this private IPFS network must u
 
 ## Start Network
 
-After rebooting your computer, open Docker Desktop first, then run:
+After rebooting your computer, Docker Desktop / Docker daemon must be running before containers can start.
+
+Recommended one-command startup:
+
+```powershell
+cd <your-repo-path>\private-ipfs-cluster
+npm start
+```
+
+This runs `scripts/start-ipfs.ps1`, which will:
+
+1. check whether Docker daemon is ready,
+2. try to open Docker Desktop if Docker is not ready,
+3. wait for Docker daemon,
+4. start the private IPFS containers.
+
+Manual startup:
+
+```powershell
+Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+```
+
+Check Docker daemon:
+
+```powershell
+docker info
+```
+
+Then start the private IPFS network:
 
 ```powershell
 cd <your-repo-path>\private-ipfs-cluster

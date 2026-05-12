@@ -25,6 +25,7 @@ It does **not** modify the original whistleblower project.
 - deploys `EmployeeSemaphoreWhistleblower`
 
 3. `frontend/`
+- SaaS Admin create company and report groups
 - Admin add employee commitment
 - Employee generate identity and proof off-chain
 - Employee submit anonymous report
@@ -107,6 +108,25 @@ Click `檢查 IPFS / Check IPFS` before testing Admin decrypt.
 
 ## Frontend Buttons (What each does)
 
+The PoC frontend has three tabs:
+
+- `SaaS Admin`
+  - platform/operator-style setup for company and report group onboarding.
+  - creates `Company`.
+  - creates `ReportGroup`.
+
+- `Admin`
+  - company admin workflow.
+  - sets Admin encryption public key.
+  - adds employee commitments to the selected report group.
+  - loads and decrypts reports.
+
+- `Employee`
+  - reporter workflow.
+  - creates/imports Semaphore identity.
+  - generates proof.
+  - submits reports by MetaMask or burner wallet.
+
 - `Connect Wallet`
   - connect MetaMask account.
 
@@ -141,14 +161,32 @@ Click `檢查 IPFS / Check IPFS` before testing Admin decrypt.
   - derive and show commitment from reporter identity input (for testing added vs non-added employee).
 
 - `Admin Add Employee`
-  - admin adds commitment into employee group.
+  - admin adds commitment into the selected `reportGroupId`.
+  - the same employee commitment can be added to different report groups when policies allow it.
 
 - `Generate Proof Off-chain`
-  - employee generates ZK proof using identity + group members + `(ipfsCID, contentHash)`.
+  - employee generates ZK proof using identity + group members + report metadata.
+  - proof message is bound to:
+    - `companyId`
+    - `reportGroupId`
+    - `ipfsCID`
+    - `contentHash/messageHash`
+    - `period`
+    - `reportSlot`
+  - proof scope is bound to:
+    - `companyId`
+    - `reportGroupId`
+    - `period`
+    - `reportSlot`
 
 - `Submit Anonymous Report`
-  - submits `ipfsCID`, `messageHash`, and proof to contract for on-chain verification.
+  - submits `companyId`, `reportGroupId`, `ipfsCID`, `messageHash`, `period`, `reportSlot`, and proof to contract for on-chain verification.
   - encrypted report content should stay in private IPFS, not on-chain.
+  - supports two submit modes:
+    - `Use MetaMask wallet`: sender is the connected MetaMask account.
+    - `Use anonymous burner wallet`: frontend generates a temporary wallet locally and sends a `gasPrice=0` transaction to the configured RPC.
+  - burner mode is intended for local Hardhat / future permissioned-chain zero-gas environments.
+  - burner mode is not suitable for Amoy because Amoy is a public testnet and still requires POL for gas.
 
 - `Load All Reports`
   - reads all on-chain report metadata.
@@ -179,9 +217,53 @@ Not revealed by proof itself:
 - `messageHash`: integrity checksum used by the proof message. The UI computes it from the report content and binds it with `ipfsCID`.
 
 Contract binds proof to both values by requiring:
-- `proof.message == keccak256(ipfsCID, messageHash)`
+- `proof.message == keccak256(companyId, reportGroupId, ipfsCID, messageHash, period, reportSlot)`
+
+The contract also binds the nullifier scope:
+
+```text
+proof.scope == keccak256(companyId, reportGroupId, period, reportSlot)
+```
 
 The contract stores only metadata and proof-related values. The encrypted report body should be stored in private IPFS.
+
+## Multi-Company / Multi-Group Notes
+
+The contract now has first-class models for:
+
+```text
+Company
+ReportGroup
+Report
+```
+
+Default deployment creates:
+
+```text
+companyId = 1
+reportGroupId = 1
+```
+
+Admin can create additional companies and report groups from the Admin tab.
+
+Each `ReportGroup` controls:
+
+- `companyId`
+- topic name
+- max reports per member
+- active time window
+- underlying Semaphore group ID
+
+Quota is controlled by `reportSlot`.
+
+Example:
+
+```text
+period = 2026-Q1
+reportSlot = 1, 2, 3
+```
+
+If `maxReportsPerMember = 3`, one valid group member can submit up to three reports in that period by using slots 1, 2, and 3. Reusing the same slot generates the same nullifier scope and is rejected.
 
 ## Team Usage Notes
 
@@ -190,6 +272,37 @@ The contract stores only metadata and proof-related values. The encrypted report
 - To share the same private IPFS network, teammates need the same `private-ipfs-cluster/.env` and `private-ipfs-cluster/secrets/swarm.key`.
 - Keep IPFS secrets private. Do not commit them to GitHub.
 - Docker Desktop must be running before `start-private-network.ps1` can start the IPFS containers.
+
+## Zero-Gas / Burner Wallet Notes
+
+The local Hardhat config is set for zero-gas experiments:
+
+```js
+hardhat: {
+  gasPrice: 0,
+  initialBaseFeePerGas: 0
+},
+localhost: {
+  url: "http://127.0.0.1:8545",
+  gasPrice: 0
+}
+```
+
+When using `Use anonymous burner wallet`, the frontend:
+
+1. creates a temporary wallet in the browser,
+2. connects it to the configured RPC,
+3. sends the report transaction with `gasPrice: 0`.
+
+This models the future permissioned-chain design:
+
+```text
+Who is eligible to report: ZK proof
+Who sends the transaction: burner wallet
+Who pays gas: nobody in the employee flow, because gasPrice=0 in the permissioned environment
+```
+
+If you restart the Hardhat node, redeploy the contract and update `frontend/.env` again.
 
 ## Test Scenarios (Membership Validation)
 

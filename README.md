@@ -44,6 +44,24 @@ Use this flow for the final anonymous employee whistleblower demo:
 
 Open Docker Desktop first. Docker CLI commands only work after Docker Desktop / Docker daemon is running.
 
+Recommended one-command startup:
+
+```powershell
+cd C:\futen\政大\3_區塊鏈\final\private-ipfs-cluster
+npm start
+```
+
+This will try to open Docker Desktop, wait for Docker daemon, and then start private IPFS.
+
+Manual Docker Desktop startup:
+
+```powershell
+Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+docker info
+```
+
+Manual private IPFS startup:
+
 ```powershell
 cd C:\futen\政大\3_區塊鏈\final\private-ipfs-cluster
 powershell -ExecutionPolicy Bypass -File scripts\start-private-network.ps1

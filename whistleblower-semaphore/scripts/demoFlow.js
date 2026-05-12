@@ -25,26 +25,40 @@ async function main() {
   const app = await App.deploy(semaphore.address);
   await app.deployed();
 
-  const groupId = Number((await app.groupId()).toString());
-  console.log("Deployed app:", app.address, "groupId:", groupId);
+  const reportGroupId = 1;
+  const companyId = 1;
+  const semaphoreGroupId = Number((await app.groupId()).toString());
+  console.log("Deployed app:", app.address, "semaphoreGroupId:", semaphoreGroupId);
 
   const employeeIdentity = new Identity();
   const commitment = employeeIdentity.commitment.toString();
   console.log("Employee commitment:", commitment);
 
-  await (await app.addEmployeeMember(commitment)).wait();
+  await (await app.addEmployeeMember(reportGroupId, commitment)).wait();
   console.log("Member added to employee group");
 
   const group = new Group([commitment]);
 
   const ipfsCID = "bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
-  const messageHash = "sha256:demo-content-hash";
+  const contentHash = "sha256:demo-content-hash";
+  const period = "2026-Q1";
+  const reportSlot = 1;
   const message = hre.ethers.BigNumber.from(
     hre.ethers.utils.keccak256(
-      hre.ethers.utils.solidityPack(["string", "string"], [ipfsCID, messageHash])
+      hre.ethers.utils.solidityPack(
+        ["uint256", "uint256", "string", "string", "string", "uint256"],
+        [companyId, reportGroupId, ipfsCID, contentHash, period, reportSlot]
+      )
     )
   ).toString();
-  const scope = hre.ethers.BigNumber.from(groupId).toString();
+  const scope = hre.ethers.BigNumber.from(
+    hre.ethers.utils.keccak256(
+      hre.ethers.utils.solidityPack(
+        ["uint256", "uint256", "string", "uint256"],
+        [companyId, reportGroupId, period, reportSlot]
+      )
+    )
+  ).toString();
 
   const proof = await generateProof(employeeIdentity, group, message, scope);
 
@@ -57,11 +71,13 @@ async function main() {
     points: proof.points
   };
 
-  await (await app.submitAnonymousReport(ipfsCID, messageHash, solidityProof)).wait();
+  const request = { companyId, reportGroupId, ipfsCID, contentHash, period, reportSlot };
+
+  await (await app.submitAnonymousReport(request, solidityProof)).wait();
   console.log("First anonymous report submitted");
 
   try {
-    await (await app.submitAnonymousReport(ipfsCID, messageHash, solidityProof)).wait();
+    await (await app.submitAnonymousReport(request, solidityProof)).wait();
     console.log("Unexpected: second report with same nullifier succeeded");
   } catch (err) {
     console.log("Second submission rejected as expected (nullifier replay blocked)");
