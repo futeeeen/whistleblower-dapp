@@ -129,7 +129,9 @@ The PoC frontend has three tabs:
   - company admin workflow.
   - sets Admin encryption public key.
   - adds employee commitments to the selected report group.
+  - removes ex-employee commitments from the selected report group.
   - loads and decrypts reports.
+  - updates report review status after checking decrypted content.
 
 - `Employee`
   - reporter workflow.
@@ -174,6 +176,13 @@ The PoC frontend has three tabs:
   - admin adds commitment into the selected `reportGroupId`.
   - the same employee commitment can be added to different report groups when policies allow it.
 
+- `Remove Ex-Employee`
+  - company admin removes an employee commitment from the selected report group.
+  - click `Load Members` first so the frontend can rebuild the Merkle tree and generate the required removal proof siblings.
+  - after removal, the commitment is excluded from the current group member tree.
+  - new PoC report groups set Semaphore old-root validity to `0`, so a removed commitment should not remain eligible through an older root after the member tree changes.
+  - if membership changes after an employee prepared a credential, the employee may need to reload members and prepare a fresh credential.
+
 - `Preload proof artifacts`
   - loads Semaphore proving artifacts (`wasm` / `zkey`) before the employee submits a report.
   - this reduces the perceived wait time when the employee prepares the anonymous credential.
@@ -208,10 +217,24 @@ The PoC frontend has three tabs:
   - reads all on-chain report metadata.
   - both Admin and Employee can see `ipfsCID`, `messageHash`, `nullifier`, and timestamp.
 
+- `Load Company Reports`
+  - filters loaded reports by the current `companyId`.
+  - this is a UI-level convenience in the PoC because blockchain metadata is still public to chain readers.
+
 - `Decrypt`
   - Admin fetches encrypted content from private IPFS by `ipfsCID`.
   - MetaMask decrypts locally with the Admin wallet private key.
   - Employees can see the CID/hash, but cannot read plaintext without the Admin private key.
+
+- `Update Status`
+  - company admin updates a report status after reviewing the decrypted content.
+  - supported statuses:
+    - `Submitted`
+    - `Reviewing`
+    - `Confirmed`
+    - `Rejected`
+    - `Closed`
+  - status note and updated timestamp are stored on-chain for audit trail.
 
 ## Verification Visualization Panel
 
@@ -270,6 +293,13 @@ reportGroupId = 1
 ```
 
 Admin can create additional companies and report groups from the Admin tab.
+
+Company admins can:
+
+- load reports related to their `companyId`,
+- decrypt reports encrypted to their Admin public key,
+- update report review status,
+- add/remove employee commitments for their report groups.
 
 Each `ReportGroup` controls:
 
@@ -338,6 +368,24 @@ Who pays gas: nobody in the employee flow, because gasPrice=0 in the permissione
 ```
 
 If you restart the Hardhat node, redeploy the contract and update `frontend/.env` again.
+
+## Commitment Privacy And Employee Offboarding
+
+It is acceptable for a company/HR system to know which employee owns which membership commitment. The commitment is the allowlist credential used to decide who may generate a valid ZK proof.
+
+The anonymity property comes from the report submission:
+
+- the report transaction contains a ZK proof and nullifier,
+- it does not reveal the employee identity private key,
+- it does not reveal which registered commitment produced the proof,
+- the company can remove a known ex-employee commitment from future eligibility.
+
+Important limitations:
+
+- If only one employee is in a report group, anonymity is weak because the anonymity set has size 1.
+- If a company removes a commitment after a report was already submitted, that does not deanonymize the old report.
+- New report groups in this PoC set Semaphore old Merkle root duration to `0` for stricter offboarding.
+- For production, also consider proof freshness policies and operational procedures for membership changes.
 
 ## Test Scenarios (Membership Validation)
 

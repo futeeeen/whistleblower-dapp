@@ -40,6 +40,12 @@ contract EmployeeSemaphoreWhistleblower {
         address submittedBy;
     }
 
+    struct ReportStatus {
+        uint8 status;
+        string note;
+        uint256 updatedAt;
+    }
+
     struct ReportSubmission {
         uint256 companyId;
         uint256 reportGroupId;
@@ -61,13 +67,16 @@ contract EmployeeSemaphoreWhistleblower {
     mapping(uint256 => Company) public companies;
     mapping(uint256 => ReportGroup) public reportGroups;
     mapping(uint256 => Report) public reports;
+    mapping(uint256 => ReportStatus) public reportStatuses;
     mapping(uint256 => mapping(uint256 => bool)) public memberCommitmentExists;
     mapping(uint256 => bool) public usedNullifiers;
 
     event CompanyCreated(uint256 indexed companyId, string companyName, address indexed adminAddress);
     event ReportGroupCreated(uint256 indexed reportGroupId, uint256 indexed companyId, uint256 semaphoreGroupId, string topicName);
     event EmployeeMemberAdded(uint256 indexed reportGroupId, uint256 indexed identityCommitment);
+    event EmployeeMemberRemoved(uint256 indexed reportGroupId, uint256 indexed identityCommitment);
     event AdminEncryptionPublicKeyUpdated(string publicKey);
+    event ReportStatusUpdated(uint256 indexed reportId, uint256 indexed companyId, uint8 status, string note);
     event AnonymousReportSubmitted(
         uint256 indexed reportId,
         uint256 indexed companyId,
@@ -119,13 +128,42 @@ contract EmployeeSemaphoreWhistleblower {
         return _createReportGroup(companyId, topicName, maxReportsPerMember, startTime, endTime);
     }
 
-    function addEmployeeMember(uint256 reportGroupId, uint256 identityCommitment) external onlyOwner {
+    function addEmployeeMember(uint256 reportGroupId, uint256 identityCommitment) external {
         ReportGroup memory rg = reportGroups[reportGroupId];
         require(rg.active, "Inactive group");
+        require(msg.sender == owner || msg.sender == companies[rg.companyId].adminAddress, "Only company admin");
         require(!memberCommitmentExists[reportGroupId][identityCommitment], "Member already added");
         semaphore.addMember(rg.semaphoreGroupId, identityCommitment);
         memberCommitmentExists[reportGroupId][identityCommitment] = true;
         emit EmployeeMemberAdded(reportGroupId, identityCommitment);
+    }
+
+    function removeEmployeeMember(
+        uint256 reportGroupId,
+        uint256 identityCommitment,
+        uint256[] calldata merkleProofSiblings
+    ) external {
+        ReportGroup memory rg = reportGroups[reportGroupId];
+        require(rg.active, "Inactive group");
+        require(msg.sender == owner || msg.sender == companies[rg.companyId].adminAddress, "Only company admin");
+        require(memberCommitmentExists[reportGroupId][identityCommitment], "Member not found");
+        semaphore.removeMember(rg.semaphoreGroupId, identityCommitment, merkleProofSiblings);
+        memberCommitmentExists[reportGroupId][identityCommitment] = false;
+        emit EmployeeMemberRemoved(reportGroupId, identityCommitment);
+    }
+
+    function updateReportStatus(uint256 reportId, uint8 status, string calldata note) external {
+        Report storage report = reports[reportId];
+        require(report.id != 0, "Report not found");
+        require(status <= 4, "Invalid status");
+        uint256 companyId = report.companyId;
+        require(msg.sender == owner || msg.sender == companies[companyId].adminAddress, "Only company admin");
+        reportStatuses[reportId] = ReportStatus({
+            status: status,
+            note: note,
+            updatedAt: block.timestamp
+        });
+        emit ReportStatusUpdated(reportId, companyId, status, note);
     }
 
     function submitAnonymousReport(
@@ -144,37 +182,64 @@ contract EmployeeSemaphoreWhistleblower {
         require(block.timestamp <= rg.endTime, "Group ended");
         require(!usedNullifiers[proof.nullifier], "Nullifier already used");
 
-        uint256 expectedScope = uint256(keccak256(abi.encodePacked(request.companyId, request.reportGroupId, request.period, request.reportSlot)));
-        uint256 expectedMessage = uint256(keccak256(abi.encodePacked(request.companyId, request.reportGroupId, request.period, request.reportSlot, REPORT_CREDENTIAL_MESSAGE_TAG)));
-        require(proof.scope == expectedScope, "Proof scope mismatch");
-        require(proof.message == expectedMessage, "Proof message mismatch");
+        require(proof.scope == _credentialScope(request), "Proof scope mismatch");
+        require(proof.message == _credentialMessage(request), "Proof message mismatch");
 
         semaphore.validateProof(rg.semaphoreGroupId, proof);
         usedNullifiers[proof.nullifier] = true;
 
-        reportCount += 1;
-        reports[reportCount] = Report({
-            id: reportCount,
-            companyId: request.companyId,
-            reportGroupId: request.reportGroupId,
-            ipfsCID: request.ipfsCID,
-            contentHash: request.contentHash,
-            period: request.period,
-            reportSlot: request.reportSlot,
-            timestamp: block.timestamp,
-            nullifier: proof.nullifier,
-            message: proof.message,
-            scope: proof.scope,
-            submittedBy: msg.sender
-        });
+        uint256 reportId = _storeReport(request, proof.nullifier, proof.message, proof.scope, msg.sender);
 
         emit AnonymousReportSubmitted(
-            reportCount,
+            reportId,
             request.companyId,
             request.reportGroupId,
             proof.nullifier,
             block.timestamp
         );
+    }
+
+    function _credentialScope(ReportSubmission calldata request) internal pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(request.companyId, request.reportGroupId, request.period, request.reportSlot)));
+    }
+
+    function _credentialMessage(ReportSubmission calldata request) internal pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(
+            request.companyId,
+            request.reportGroupId,
+            request.period,
+            request.reportSlot,
+            REPORT_CREDENTIAL_MESSAGE_TAG
+        )));
+    }
+
+    function _storeReport(
+        ReportSubmission calldata request,
+        uint256 nullifier,
+        uint256 message,
+        uint256 scope,
+        address submittedBy
+    ) internal returns (uint256 reportId) {
+        reportCount += 1;
+        reportId = reportCount;
+        Report storage report = reports[reportId];
+        report.id = reportId;
+        report.companyId = request.companyId;
+        report.reportGroupId = request.reportGroupId;
+        report.ipfsCID = request.ipfsCID;
+        report.contentHash = request.contentHash;
+        report.period = request.period;
+        report.reportSlot = request.reportSlot;
+        report.timestamp = block.timestamp;
+        report.nullifier = nullifier;
+        report.message = message;
+        report.scope = scope;
+        report.submittedBy = submittedBy;
+        reportStatuses[reportId] = ReportStatus({
+            status: 0,
+            note: "",
+            updatedAt: block.timestamp
+        });
     }
 
     function _createCompany(
@@ -210,7 +275,7 @@ contract EmployeeSemaphoreWhistleblower {
         require(maxReportsPerMember > 0, "Invalid max reports");
         require(endTime > startTime, "Invalid time range");
 
-        uint256 semaphoreGroupId = semaphore.createGroup(address(this));
+        uint256 semaphoreGroupId = semaphore.createGroup(address(this), 0);
         reportGroupCount += 1;
         reportGroups[reportGroupCount] = ReportGroup({
             id: reportGroupCount,

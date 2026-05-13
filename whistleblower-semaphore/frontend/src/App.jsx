@@ -26,6 +26,7 @@ function App() {
   const [diag, setDiag] = useState("");
 
   const [newMemberCommitment, setNewMemberCommitment] = useState("");
+  const [removeMemberCommitment, setRemoveMemberCommitment] = useState("");
   const [members, setMembers] = useState([]);
   const [groupId, setGroupId] = useState("");
   const [companyId, setCompanyId] = useState("1");
@@ -60,6 +61,7 @@ function App() {
   const [adminEncryptionPubKey, setAdminEncryptionPubKey] = useState("");
   const [ipfsGateway, setIpfsGateway] = useState("http://127.0.0.1:8080");
   const [reports, setReports] = useState([]);
+  const [reportStatusDrafts, setReportStatusDrafts] = useState({});
 
   const canUse = useMemo(() => !!window.ethereum && !!CONTRACT_ADDRESS, []);
   const canRead = !!CONTRACT_ADDRESS && (!!window.ethereum || submitMode === "burner");
@@ -144,6 +146,7 @@ function App() {
       gid: "讀取 Group ID",
       members: "載入成員",
       addEmployee: "加入員工",
+      removeEmployee: "移除離職員工",
       createCompany: "建立公司",
       createGroup: "建立舉報主題",
       genIdentity: "產生 Identity",
@@ -157,6 +160,8 @@ function App() {
       metamaskMode: "使用 MetaMask 錢包",
       burnerMode: "使用匿名 burner wallet",
       loadReports: "查詢所有鏈上舉報",
+      loadCompanyReports: "查詢本公司舉報",
+      updateStatus: "更新狀態",
       decrypt: "解密",
       decryptAll: "全部解密",
       status: "狀態"
@@ -175,6 +180,7 @@ function App() {
       gid: "Load Group ID",
       members: "Load Members",
       addEmployee: "Add Employee",
+      removeEmployee: "Remove Ex-Employee",
       createCompany: "Create Company",
       createGroup: "Create Report Group",
       genIdentity: "Generate Identity",
@@ -188,6 +194,8 @@ function App() {
       metamaskMode: "Use MetaMask wallet",
       burnerMode: "Use anonymous burner wallet",
       loadReports: "Load All Reports",
+      loadCompanyReports: "Load Company Reports",
+      updateStatus: "Update Status",
       decrypt: "Decrypt",
       decryptAll: "Decrypt All",
       status: "Status"
@@ -224,6 +232,9 @@ function App() {
   function getBurnerProvider() { return new ethers.providers.JsonRpcProvider(burnerRpcUrl.trim() || LOCAL_RPC_URL); }
   function getReadProvider() { return submitMode === "burner" ? getBurnerProvider() : getProvider(); }
   function getReadContract() { return new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getReadProvider()); }
+  function reportStatusLabel(status) {
+    return ["Submitted", "Reviewing", "Confirmed", "Rejected", "Closed"][Number(status)] || "Unknown";
+  }
 
   function getProofDepth() {
     if (!members.length) return 1;
@@ -417,9 +428,24 @@ function App() {
 
   async function loadMembersFromEvents() {
     const c = getReadContract();
-    const filter = reportGroupId ? c.filters.EmployeeMemberAdded(reportGroupId, null) : c.filters.EmployeeMemberAdded();
-    const logs = await c.queryFilter(filter, 0, "latest");
-    const list = logs.map((l) => l.args.identityCommitment.toString());
+    const addFilter = reportGroupId ? c.filters.EmployeeMemberAdded(reportGroupId, null) : c.filters.EmployeeMemberAdded();
+    const removeFilter = reportGroupId ? c.filters.EmployeeMemberRemoved(reportGroupId, null) : c.filters.EmployeeMemberRemoved();
+    const [addLogs, removeLogs] = await Promise.all([
+      c.queryFilter(addFilter, 0, "latest"),
+      c.queryFilter(removeFilter, 0, "latest")
+    ]);
+    const events = [
+      ...addLogs.map((log) => ({ log, type: "add" })),
+      ...removeLogs.map((log) => ({ log, type: "remove" }))
+    ].sort((a, b) => (a.log.blockNumber - b.log.blockNumber) || (a.log.logIndex - b.log.logIndex));
+    const current = [];
+    for (const event of events) {
+      const commitment = event.log.args.identityCommitment.toString();
+      const index = current.indexOf(commitment);
+      if (event.type === "add" && index === -1) current.push(commitment);
+      if (event.type === "remove" && index !== -1) current.splice(index, 1);
+    }
+    const list = current;
     setMembers(list);
     setStatus(`Loaded ${list.length} members for reportGroupId=${reportGroupId || "all"}`);
   }
@@ -465,12 +491,29 @@ function App() {
 
   async function adminAddEmployee() {
     const commitment = newMemberCommitment.trim();
-    if (!commitment) throw new Error("隢撓??employee commitment");
-    if (!reportGroupId.trim()) throw new Error("隢撓??reportGroupId");
+    if (!commitment) throw new Error("Please enter employee commitment");
+    if (!reportGroupId.trim()) throw new Error("Please enter reportGroupId");
     const tx = await getSignerContract().addEmployeeMember(reportGroupId.trim(), commitment);
     await tx.wait();
     setStatus("Employee added");
     pushToast("success", "Employee added");
+  }
+
+  async function adminRemoveEmployee() {
+    const commitment = removeMemberCommitment.trim();
+    if (!commitment) throw new Error("Please enter employee commitment to remove");
+    if (!reportGroupId.trim()) throw new Error("Please enter reportGroupId");
+    if (!members.length) throw new Error("Please load current members first");
+    const group = new Group(members);
+    const index = group.indexOf(commitment);
+    if (index < 0) throw new Error("Commitment is not in the loaded member list");
+    const proof = group.generateMerkleProof(index);
+    const siblings = proof.siblings.map((sibling) => sibling.toString());
+    const tx = await getSignerContract().removeEmployeeMember(reportGroupId.trim(), commitment, siblings);
+    await tx.wait();
+    setMembers((prev) => prev.filter((member) => member !== commitment));
+    setStatus("Employee commitment removed");
+    pushToast("success", "Employee removed");
   }
 
   async function adminCreateCompany() {
@@ -612,12 +655,14 @@ function App() {
     pushToast("success", submitMode === "burner" ? "Report submitted by burner wallet" : "Report submitted");
   }
 
-  async function loadAllReports() {
+  async function loadAllReports(companyOnly = false) {
     const c = getReadContract();
     const total = Number((await c.reportCount()).toString());
     const list = [];
     for (let i = 1; i <= total; i++) {
       const r = await c.reports(i);
+      if (companyOnly && r.companyId.toString() !== companyId.trim()) continue;
+      const rs = await c.reportStatuses(i);
       list.push({
         id: Number(r.id),
         companyId: r.companyId.toString(),
@@ -632,13 +677,32 @@ function App() {
         message: r.message.toString(),
         scope: r.scope?.toString?.() || "",
         submittedBy: r.submittedBy || "",
+        status: Number(rs.status || 0),
+        statusNote: rs.note || "",
+        statusUpdatedAt: Number(rs.updatedAt || 0),
         plainText: ""
       });
     }
     list.sort((a, b) => b.id - a.id);
     setReports(list);
-    setStatus(`Loaded ${list.length} reports`);
+    setStatus(`Loaded ${list.length}${companyOnly ? " company" : ""} reports`);
     pushToast("success", `Loaded ${list.length} reports`);
+  }
+
+  async function updateReportStatus(reportId) {
+    const draft = reportStatusDrafts[reportId] || {};
+    const status = Number(draft.status ?? 1);
+    if (!Number.isInteger(status) || status < 0 || status > 4) throw new Error("Invalid report status");
+    const note = draft.note || "";
+    const tx = await getSignerContract().updateReportStatus(reportId, status, note);
+    await tx.wait();
+    setReports((prev) => prev.map((report) => (
+      report.id === reportId
+        ? { ...report, status, statusNote: note, statusUpdatedAt: Math.floor(Date.now() / 1000) }
+        : report
+    )));
+    setStatus(`Report #${reportId} status updated`);
+    pushToast("success", `Report #${reportId} status updated`);
   }
 
   async function decryptOne(reportId) {
@@ -835,11 +899,19 @@ function App() {
             ) : activeTab === "admin" ? (
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                  <h3>{t.admin}: {t.addEmployee}</h3>
+                  <h3>{t.admin}: Employee Membership</h3>
                   <input value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="reportGroupId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
                   <input value={newMemberCommitment} onChange={(e) => setNewMemberCommitment(e.target.value)} placeholder="employee identity commitment" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
-                  <div style={{ marginTop: 8 }}><Btn label={t.addEmployee} k="addEmployee" onClick={adminAddEmployee} primary disabled={!canUse} /></div>
-                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>reportGroupId: {reportGroupId || "-"} | Semaphore groupId: {groupId || "-"}</div>
+                  <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Btn label={t.addEmployee} k="addEmployee" onClick={adminAddEmployee} primary disabled={!canUse} />
+                    <Btn label={t.members} k="loadMembersAdmin" onClick={loadMembersFromEvents} disabled={!canRead} />
+                  </div>
+                  <input value={removeMemberCommitment} onChange={(e) => setRemoveMemberCommitment(e.target.value)} placeholder="ex-employee commitment to remove" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginTop: 8 }} />
+                  <div style={{ marginTop: 8 }}><Btn label={t.removeEmployee} k="removeEmployee" onClick={adminRemoveEmployee} disabled={!canUse} /></div>
+                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>reportGroupId: {reportGroupId || "-"} | Semaphore groupId: {groupId || "-"} | active members loaded: {members.length}</div>
+                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+                    Removing a commitment prevents future credentials from the current member tree. Company HR may know which employee owns a commitment, but submitted reports remain unlinkable to a specific commitment through the proof alone.
+                  </div>
                 </div>
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
@@ -860,7 +932,9 @@ function App() {
                     style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }}
                   />
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                    <Btn label={t.loadReports} k="loadReports" onClick={loadAllReports} disabled={!canUse} />
+                    <input value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="companyId" style={{ width: 120, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                    <Btn label={t.loadCompanyReports} k="loadCompanyReports" onClick={() => loadAllReports(true)} disabled={!canUse} />
+                    <Btn label={t.loadReports} k="loadReports" onClick={() => loadAllReports(false)} disabled={!canUse} />
                     <Btn label={t.decryptAll} k="decryptAll" onClick={decryptAll} disabled={!canUse || reports.length === 0} />
                   </div>
                   {reports.length === 0 ? <div>no reports</div> : reports.map((r) => (
@@ -870,11 +944,32 @@ function App() {
                       <div>period: {r.period} | slot: {r.reportSlot}</div>
                       <div>ipfsCID: {r.ipfsCID}</div>
                       <div>messageHash: {r.messageHash}</div>
+                      <div>status: {reportStatusLabel(r.status)}{r.statusNote ? ` | note: ${r.statusNote}` : ""}</div>
                       <div>nullifier: {r.nullifier}</div>
                       <div>scope: {r.scope}</div>
                       <div>sender: {r.submittedBy}</div>
                       <div>encrypted: {r.encryptedReport ? `${r.encryptedReport.slice(0, 80)}...` : "(fetch by ipfsCID)"}</div>
                       <div style={{ marginTop: 6 }}><Btn label={t.decrypt} k={`decrypt_${r.id}`} onClick={() => decryptOne(r.id)} disabled={!canUse} /></div>
+                      <div style={{ display: "grid", gridTemplateColumns: "160px 1fr auto", gap: 8, marginTop: 8 }}>
+                        <select
+                          value={reportStatusDrafts[r.id]?.status ?? r.status}
+                          onChange={(e) => setReportStatusDrafts((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), status: e.target.value } }))}
+                          style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px" }}
+                        >
+                          <option value="0">Submitted</option>
+                          <option value="1">Reviewing</option>
+                          <option value="2">Confirmed</option>
+                          <option value="3">Rejected</option>
+                          <option value="4">Closed</option>
+                        </select>
+                        <input
+                          value={reportStatusDrafts[r.id]?.note ?? r.statusNote}
+                          onChange={(e) => setReportStatusDrafts((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), note: e.target.value } }))}
+                          placeholder="status note after reviewing content"
+                          style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px" }}
+                        />
+                        <Btn label={t.updateStatus} k={`status_${r.id}`} onClick={() => updateReportStatus(r.id)} disabled={!canUse} />
+                      </div>
                       <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>plain: {r.plainText || "(not decrypted)"}</div>
                     </div>
                   ))}
@@ -952,7 +1047,7 @@ function App() {
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Btn label={t.submit} k="submit" onClick={submitAnonymousReport} primary disabled={!CONTRACT_ADDRESS || (submitMode === "metamask" && !canUse)} />
-                    <Btn label={t.loadReports} k="loadReportsEmp" onClick={loadAllReports} disabled={!canRead} />
+                    <Btn label={t.loadReports} k="loadReportsEmp" onClick={() => loadAllReports(false)} disabled={!canRead} />
                   </div>
                   {reports.length > 0 ? reports.map((r) => (
                     <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginTop: 8, overflowWrap: "anywhere" }}>

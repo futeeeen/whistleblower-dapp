@@ -1,4 +1,15 @@
-﻿# 專案 Push 修改紀錄
+# 專案 Push 修改紀錄
+
+## 2026.05.13_11:01:31
+* 新增公司端案件狀態管理，Admin 可查詢本公司舉報後更新指定 report 的狀態與處理備註。
+* 合約新增 ReportStatus、reportStatuses mapping 與 ReportStatusUpdated event，讓案件處理狀態可上鏈留存 audit trail。
+* 前端 Admin 報表區新增 Load Company Reports、狀態選單、備註輸入與 Update Status 操作。
+* 新增離職員工退出流程，Admin 可載入目前群組成員後，使用 commitment 產生 remove proof 並移除該成員。
+* 合約新增 EmployeeMemberRemoved event 與 removeEmployeeMember，並允許公司 Admin 管理自己 report group 的成員新增 / 移除。
+* 調整成員載入邏輯，前端會同時讀取 EmployeeMemberAdded 與 EmployeeMemberRemoved events，重建目前有效 member list。
+* 新建立的 Semaphore group 將 old root validity duration 設為 0，降低離職員工透過舊 Merkle root 繼續提交的風險。
+* README 補充 Remove Ex-Employee、Load Company Reports、Update Status，以及 commitment 隱私與 offboarding 安全性說明。
+* 完成驗證：合約 compile、前端 production build、ABI 同步與 diff 檢查。
 
 ## 2026.05.12_16:50:00
 * 調整 Employee burner wallet 模式，讓員工端讀鏈與送交易不再依賴 MetaMask。
