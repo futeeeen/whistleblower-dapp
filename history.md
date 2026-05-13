@@ -1,5 +1,23 @@
 # 專案 Push 修改紀錄
 
+## 2026.05.13_19:11:12
+* 修復 ZK proof generation E2E 測試長時間卡住的問題。
+* 找到根因：proof child 實際已完成 proving，但未明確結束 process，導致 parent 等到 timeout。
+* 同時避開 Node 端 BigInt witness input 對 snarkjs 不穩的情況，改為 decimal string witness input。
+* 將 generateSemaphoreProofChild.js 改為直接使用 wtns.calculate + groth16.prove，並用 packGroth16Proof 輸出合約可驗證格式。
+* E2E timeout 時會附上 child stderr debug 訊息，未來若 proof 卡住更容易定位。
+* 修正 non-member proof 測試，讓測試與前端一樣明確使用 group.depth。
+* 完整 npm run e2e:proof 已通過，涵蓋 proof、Private IPFS、burner gasPrice=0、nullifier replay、quota slot 與 non-member rejection。
+* 同步完成 npm run compile、frontend npm run build 與 diff 格式檢查。
+
+## 2026.05.13_12:57:56
+* 新增 product-presentation 互動式產品介紹網站，可取代簡報用來展示匿名舉報平台。
+* 展示頁包含產品定位、痛點、角色流程、ZK proof、Hybrid Encryption、Private IPFS、聯盟鏈 / 許可鏈與互動情境 Demo。
+* 設計企業級可信任視覺風格，支援簡報模式、右側章節導覽、角色切換、架構卡片與情境切換。
+* 新增 GitHub Actions workflow，將 product-presentation 自動部署到 GitHub Pages。
+* 修正 GitHub Pages workflow 設定，加入 Pages enablement 與 Node 24 環境設定。
+* 完成部署驗證，產品介紹頁已可透過 GitHub Pages 網址公開瀏覽。
+
 ## 2026.05.13_11:56:45
 * 新增 hybrid encryption 匿名雙向溝通流程，每筆舉報自動產生一組 thread secret key。
 * 初次舉報內容改為使用 AES-GCM 對稱式加密，並用公司 Admin public key 加密 thread secret key。

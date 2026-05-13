@@ -119,6 +119,7 @@ async function generateProofWithTimeout(generateProof, identity, group, message,
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [childPath], {
       cwd: path.resolve(__dirname, ".."),
+      env: { ...process.env, PROOF_CHILD_DEBUG: process.env.PROOF_CHILD_DEBUG || "0" },
       stdio: ["pipe", "pipe", "pipe"]
     });
 
@@ -126,7 +127,7 @@ async function generateProofWithTimeout(generateProof, identity, group, message,
     let stderr = "";
     const timeout = setTimeout(() => {
       child.kill("SIGKILL");
-      reject(new Error(`Semaphore proof generation timed out after ${timeoutMs}ms (${label})`));
+      reject(new Error(`Semaphore proof generation timed out after ${timeoutMs}ms (${label})\n${stderr}`));
     }, timeoutMs);
 
     child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
@@ -285,7 +286,7 @@ async function main() {
   await expectRevert("non-member identity cannot generate a valid group proof", async () => {
     const message = encodeCredentialMessage(companyId, reportGroupId, period, 1);
     const scope = encodeScope(companyId, reportGroupId, period, 1);
-    await generateProof(outsider, group, message, scope);
+    await generateProof(outsider, group, message, scope, group.depth || 1);
   });
 
   const reportCount = await app.reportCount();
