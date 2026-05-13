@@ -46,6 +46,16 @@ contract EmployeeSemaphoreWhistleblower {
         uint256 updatedAt;
     }
 
+    struct ReportMessage {
+        uint256 id;
+        uint256 reportId;
+        uint8 senderRole;
+        string ipfsCID;
+        string contentHash;
+        uint256 timestamp;
+        address submittedBy;
+    }
+
     struct ReportSubmission {
         uint256 companyId;
         uint256 reportGroupId;
@@ -61,6 +71,7 @@ contract EmployeeSemaphoreWhistleblower {
     uint256 public companyCount;
     uint256 public reportGroupCount;
     uint256 public reportCount;
+    uint256 public reportMessageCount;
 
     string public adminEncryptionPublicKey;
 
@@ -68,6 +79,7 @@ contract EmployeeSemaphoreWhistleblower {
     mapping(uint256 => ReportGroup) public reportGroups;
     mapping(uint256 => Report) public reports;
     mapping(uint256 => ReportStatus) public reportStatuses;
+    mapping(uint256 => ReportMessage) public reportMessages;
     mapping(uint256 => mapping(uint256 => bool)) public memberCommitmentExists;
     mapping(uint256 => bool) public usedNullifiers;
 
@@ -77,6 +89,14 @@ contract EmployeeSemaphoreWhistleblower {
     event EmployeeMemberRemoved(uint256 indexed reportGroupId, uint256 indexed identityCommitment);
     event AdminEncryptionPublicKeyUpdated(string publicKey);
     event ReportStatusUpdated(uint256 indexed reportId, uint256 indexed companyId, uint8 status, string note);
+    event ReportMessageAdded(
+        uint256 indexed messageId,
+        uint256 indexed reportId,
+        uint8 indexed senderRole,
+        string ipfsCID,
+        string contentHash,
+        uint256 timestamp
+    );
     event AnonymousReportSubmitted(
         uint256 indexed reportId,
         uint256 indexed companyId,
@@ -107,6 +127,18 @@ contract EmployeeSemaphoreWhistleblower {
         require(bytes(publicKey).length > 0, "Empty key");
         adminEncryptionPublicKey = publicKey;
         companies[1].adminPublicKey = publicKey;
+        emit AdminEncryptionPublicKeyUpdated(publicKey);
+    }
+
+    function setCompanyAdminPublicKey(uint256 companyId, string calldata publicKey) external {
+        Company storage company = companies[companyId];
+        require(company.active, "Inactive company");
+        require(bytes(publicKey).length > 0, "Empty key");
+        require(msg.sender == owner || msg.sender == company.adminAddress, "Only company admin");
+        company.adminPublicKey = publicKey;
+        if (companyId == 1) {
+            adminEncryptionPublicKey = publicKey;
+        }
         emit AdminEncryptionPublicKeyUpdated(publicKey);
     }
 
@@ -164,6 +196,38 @@ contract EmployeeSemaphoreWhistleblower {
             updatedAt: block.timestamp
         });
         emit ReportStatusUpdated(reportId, companyId, status, note);
+    }
+
+    function addReportMessage(
+        uint256 reportId,
+        uint8 senderRole,
+        string calldata ipfsCID,
+        string calldata contentHash
+    ) external returns (uint256) {
+        Report storage report = reports[reportId];
+        require(report.id != 0, "Report not found");
+        require(senderRole == 1 || senderRole == 2, "Invalid sender role");
+        require(bytes(ipfsCID).length > 0, "Empty ipfsCID");
+        require(bytes(contentHash).length > 0, "Empty contentHash");
+
+        if (senderRole == 1) {
+            uint256 companyId = report.companyId;
+            require(msg.sender == owner || msg.sender == companies[companyId].adminAddress, "Only company admin");
+        }
+
+        reportMessageCount += 1;
+        reportMessages[reportMessageCount] = ReportMessage({
+            id: reportMessageCount,
+            reportId: reportId,
+            senderRole: senderRole,
+            ipfsCID: ipfsCID,
+            contentHash: contentHash,
+            timestamp: block.timestamp,
+            submittedBy: msg.sender
+        });
+
+        emit ReportMessageAdded(reportMessageCount, reportId, senderRole, ipfsCID, contentHash, block.timestamp);
+        return reportMessageCount;
     }
 
     function submitAnonymousReport(

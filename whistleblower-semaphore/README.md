@@ -127,7 +127,7 @@ The PoC frontend has three tabs:
 
 - `Admin`
   - company admin workflow.
-  - sets Admin encryption public key.
+  - sets the selected company's Admin encryption public key.
   - adds employee commitments to the selected report group.
   - removes ex-employee commitments from the selected report group.
   - loads and decrypts reports.
@@ -172,6 +172,12 @@ The PoC frontend has three tabs:
 - `Preview Reporter Commitment`
   - derive and show commitment from reporter identity input (for testing added vs non-added employee).
 
+- `Set Company Admin PubKey`
+  - uses the current `companyId` input and public key textarea.
+  - writes the public key to `companies[companyId].adminPublicKey`.
+  - only the platform owner or that company's `adminAddress` can update it.
+  - employees use this company-specific public key to wrap the report thread secret key.
+
 - `Admin Add Employee`
   - admin adds commitment into the selected `reportGroupId`.
   - the same employee commitment can be added to different report groups when policies allow it.
@@ -201,7 +207,8 @@ The PoC frontend has three tabs:
 
 - `Encrypt + Upload Report`
   - in MetaMask mode, employee manually fills `ipfsCID` after uploading encrypted content separately.
-  - in burner mode, employee only fills report content; the frontend encrypts with the selected company's Admin public key, uploads ciphertext to Private IPFS, fills `ipfsCID`, and computes `messageHash` automatically.
+  - in burner mode, employee only fills report content; the frontend generates a one-report thread secret key, encrypts the report with AES-GCM, encrypts that thread key with the selected company's Admin public key, uploads the hybrid encrypted payload to Private IPFS, fills `ipfsCID`, and computes `messageHash` automatically.
+  - after encryption, the employee must save the displayed thread secret key. It is needed later to read Admin replies and send anonymous follow-ups.
 
 - `Submit Anonymous Report`
   - submits `companyId`, `reportGroupId`, `ipfsCID`, `messageHash`, `period`, `reportSlot`, and proof to contract for on-chain verification.
@@ -223,8 +230,17 @@ The PoC frontend has three tabs:
 
 - `Decrypt`
   - Admin fetches encrypted content from private IPFS by `ipfsCID`.
-  - MetaMask decrypts locally with the Admin wallet private key.
-  - Employees can see the CID/hash, but cannot read plaintext without the Admin private key.
+  - MetaMask decrypts the wrapped thread secret key with the Admin wallet private key.
+  - the report content is then decrypted locally with the recovered thread secret key.
+  - Employees can see the CID/hash, but cannot read plaintext unless they saved the report's thread secret key.
+
+- `Anonymous Thread Reply`
+  - each report can have follow-up messages between Admin and Reporter.
+  - Admin replies are encrypted with the report's thread secret key and uploaded to Private IPFS.
+  - Reporter enters `reportId` plus the saved thread secret key to load and decrypt Admin replies.
+  - Reporter follow-up replies reuse the same thread secret key, upload ciphertext to Private IPFS, and submit message metadata with burner wallet.
+  - on-chain thread metadata stores only `reportId`, `senderRole`, `ipfsCID`, `contentHash`, and timestamp.
+  - PoC note: reporter replies are protected by possession of the thread secret key at the encryption layer. A production version should add a reply-token or ZK authorization check to reduce metadata spam.
 
 - `Update Status`
   - company admin updates a report status after reviewing the decrypted content.

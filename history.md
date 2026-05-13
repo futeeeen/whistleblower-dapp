@@ -1,5 +1,17 @@
 # 專案 Push 修改紀錄
 
+## 2026.05.13_11:56:45
+* 新增 hybrid encryption 匿名雙向溝通流程，每筆舉報自動產生一組 thread secret key。
+* 初次舉報內容改為使用 AES-GCM 對稱式加密，並用公司 Admin public key 加密 thread secret key。
+* 前端提醒舉報者保存 thread secret key，後續查看 Admin 回覆與再次回覆都使用同一把案件 thread key。
+* 合約新增 ReportMessage、reportMessages mapping、ReportMessageAdded event 與 addReportMessage，鏈上只保存 CID、hash、senderRole、timestamp 等 metadata。
+* Admin review 區塊新增匿名案件對話，可解密初次舉報後使用 recovered thread key 加密追問並上傳 Private IPFS。
+* Employee 頁面新增輸入 reportId + thread secret key 的匿名對話區，可讀取 Admin 回覆並用 burner wallet 送出後續回覆。
+* 補上 Set Company Admin Public Key(companyId, publicKey)，讓每間公司可由 platform owner 或該公司 adminAddress 更新自己的加密公鑰。
+* 前端 Admin Encryption Key 區塊新增 companyId 輸入，改為寫入 companies[companyId].adminPublicKey。
+* README 補充 hybrid encryption、匿名 thread reply、多公司 Admin public key 設定與正式版需加 reply-token / ZK 授權的注意事項。
+* 完成驗證：合約 compile、ABI 同步、前端 production build、diff 格式檢查。
+
 ## 2026.05.13_11:01:31
 * 新增公司端案件狀態管理，Admin 可查詢本公司舉報後更新指定 report 的狀態與處理備註。
 * 合約新增 ReportStatus、reportStatuses mapping 與 ReportStatusUpdated event，讓案件處理狀態可上鏈留存 audit trail。

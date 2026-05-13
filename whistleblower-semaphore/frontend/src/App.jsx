@@ -62,6 +62,11 @@ function App() {
   const [ipfsGateway, setIpfsGateway] = useState("http://127.0.0.1:8080");
   const [reports, setReports] = useState([]);
   const [reportStatusDrafts, setReportStatusDrafts] = useState({});
+  const [threadSecretKey, setThreadSecretKey] = useState("");
+  const [threadReportId, setThreadReportId] = useState("");
+  const [threadMessages, setThreadMessages] = useState({});
+  const [adminReplyDrafts, setAdminReplyDrafts] = useState({});
+  const [reporterReplyText, setReporterReplyText] = useState("");
 
   const canUse = useMemo(() => !!window.ethereum && !!CONTRACT_ADDRESS, []);
   const canRead = !!CONTRACT_ADDRESS && (!!window.ethereum || submitMode === "burner");
@@ -111,7 +116,7 @@ function App() {
       adminKeyTitle: "Admin encryption key buttons",
       adminKey: [
         "Get Admin Encryption PubKey asks MetaMask for the current Admin account encryption public key. It is public, not private.",
-        "Set Admin Encryption PubKey writes that key to the contract so employees encrypt to the selected company's Admin key.",
+        "Set Admin Encryption PubKey writes that key to the selected companyId so employees encrypt to that company's Admin key.",
         "Only the Admin MetaMask private key can decrypt the ciphertext from IPFS."
       ],
       employeeTitle: "Employee flow",
@@ -153,7 +158,7 @@ function App() {
       importIdentity: "匯入 Identity",
       previewReporter: "預覽 Reporter Commitment",
       getAdminPub: "取得 Admin 加密公鑰",
-      setAdminPub: "設定 Admin 加密公鑰到鏈上",
+      setAdminPub: "設定公司 Admin 公鑰",
       genProof: "加密並上傳舉報",
       submit: "送出匿名舉報",
       submitMode: "送出方式",
@@ -164,6 +169,8 @@ function App() {
       updateStatus: "更新狀態",
       decrypt: "解密",
       decryptAll: "全部解密",
+      loadThread: "載入案件對話",
+      sendReply: "送出回覆",
       status: "狀態"
     },
     en: {
@@ -187,7 +194,7 @@ function App() {
       importIdentity: "Import Identity",
       previewReporter: "Preview Reporter Commitment",
       getAdminPub: "Get Admin Encryption PubKey",
-      setAdminPub: "Set Admin Encryption PubKey",
+      setAdminPub: "Set Company Admin PubKey",
       genProof: "Encrypt + Upload Report",
       submit: "Submit Anonymous Report",
       submitMode: "Submit Mode",
@@ -198,6 +205,8 @@ function App() {
       updateStatus: "Update Status",
       decrypt: "Decrypt",
       decryptAll: "Decrypt All",
+      loadThread: "Load Thread",
+      sendReply: "Send Reply",
       status: "Status"
     }
   }[lang];
@@ -301,6 +310,52 @@ function App() {
     const bytes = new TextEncoder().encode(input);
     const digest = await crypto.subtle.digest("SHA-256", bytes);
     return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  function bytesToBase64(bytes) {
+    return btoa(String.fromCharCode(...new Uint8Array(bytes)));
+  }
+
+  function base64ToBytes(base64) {
+    return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  }
+
+  function generateThreadSecretKey() {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    return bytesToBase64(bytes);
+  }
+
+  async function importThreadAesKey(secretKey) {
+    return crypto.subtle.importKey("raw", base64ToBytes(secretKey.trim()), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  }
+
+  async function encryptWithThreadKey(secretKey, plainText) {
+    const iv = new Uint8Array(12);
+    crypto.getRandomValues(iv);
+    const key = await importThreadAesKey(secretKey);
+    const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plainText));
+    return { alg: "AES-256-GCM", iv: bytesToBase64(iv), ciphertext: bytesToBase64(cipher) };
+  }
+
+  async function decryptWithThreadKey(secretKey, cipherBox) {
+    const key = await importThreadAesKey(secretKey);
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(cipherBox.iv) }, key, base64ToBytes(cipherBox.ciphertext));
+    return new TextDecoder().decode(plain);
+  }
+
+  async function buildThreadPayload({ type, plainText, secretKey, encryptedKey = "", reportId = "", senderRole = "" }) {
+    const cipher = await encryptWithThreadKey(secretKey, plainText);
+    const payload = JSON.stringify({
+      version: "thread-hybrid-v1",
+      type,
+      reportId,
+      senderRole,
+      encryptedKey,
+      cipher,
+      createdAt: new Date().toISOString()
+    });
+    return { payload, contentHash: `sha256:${await sha256Hex(payload)}` };
   }
 
   async function encryptWithAdminPubKey(pubKey, plainText) {
@@ -460,10 +515,11 @@ function App() {
 
   async function adminSetEncryptionPubKey() {
     if (!adminEncryptionPubKey.trim()) throw new Error("Please get or enter Admin encryption public key first");
-    const tx = await getSignerContract().setAdminEncryptionPublicKey(adminEncryptionPubKey.trim());
+    if (!companyId.trim()) throw new Error("Please enter companyId");
+    const tx = await getSignerContract().setCompanyAdminPublicKey(companyId.trim(), adminEncryptionPubKey.trim());
     await tx.wait();
-    setStatus("Admin encryption public key set on-chain");
-    pushToast("success", "Admin pubkey set");
+    setStatus(`Company #${companyId.trim()} admin encryption public key set on-chain`);
+    pushToast("success", "Company admin pubkey set");
   }
 
   function createIdentity() {
@@ -600,21 +656,26 @@ function App() {
     const adminPub = company.adminPublicKey || await c.adminEncryptionPublicKey();
     if (!adminPub) throw new Error("Admin public key is not set");
 
-    const encrypted = await encryptWithAdminPubKey(adminPub, reportPlaintext.trim());
+    const secretKey = generateThreadSecretKey();
+    const encryptedKey = await encryptWithAdminPubKey(adminPub, secretKey);
+    const { payload: encrypted, contentHash } = await buildThreadPayload({
+      type: "initial_report",
+      plainText: reportPlaintext.trim(),
+      secretKey,
+      encryptedKey,
+      senderRole: "reporter"
+    });
+    setThreadSecretKey(secretKey);
     setEncryptedReport(encrypted);
     let finalIpfsCID = ipfsCID.trim();
-    let hashSource = reportPlaintext.trim();
 
     if (submitMode === "burner") {
       finalIpfsCID = await uploadEncryptedReportToIpfs(encrypted);
       setIpfsCID(finalIpfsCID);
-      hashSource = encrypted;
     }
 
-    const messageHashHex = await sha256Hex(hashSource);
-    const computedMessageHash = `sha256:${messageHashHex}`;
-    setMessageHash(computedMessageHash);
-    setStatus("Report encrypted and payload prepared");
+    setMessageHash(contentHash);
+    setStatus("Report encrypted and payload prepared. Save the thread secret key before leaving this page.");
     pushToast("success", "Report encrypted + uploaded");
   }
 
@@ -650,7 +711,10 @@ function App() {
       tx = await getSignerContract().submitAnonymousReport(request, proof);
     }
 
-    await tx.wait();
+    const receipt = await tx.wait();
+    const evt = receipt.events?.find((e) => e.event === "AnonymousReportSubmitted");
+    const submittedReportId = evt?.args?.reportId?.toString?.() || "";
+    if (submittedReportId) setThreadReportId(submittedReportId);
     setStatus(`Anonymous report submitted via ${submitMode === "burner" ? "burner wallet" : "MetaMask"}`);
     pushToast("success", submitMode === "burner" ? "Report submitted by burner wallet" : "Report submitted");
   }
@@ -710,8 +774,21 @@ function App() {
     const target = reports.find((r) => r.id === reportId);
     if (!target) return;
     const encryptedPayload = await fetchEncryptedReportFromIpfs(target);
-    const plain = await window.ethereum.request({ method: "eth_decrypt", params: [encryptedPayload, wallet] });
-    setReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, plainText: plain } : r)));
+    let plain;
+    let recoveredThreadKey = "";
+    try {
+      const payload = JSON.parse(encryptedPayload);
+      if (payload.version === "thread-hybrid-v1" && payload.encryptedKey) {
+        recoveredThreadKey = await window.ethereum.request({ method: "eth_decrypt", params: [payload.encryptedKey, wallet] });
+        plain = await decryptWithThreadKey(recoveredThreadKey, payload.cipher);
+      } else {
+        plain = await window.ethereum.request({ method: "eth_decrypt", params: [encryptedPayload, wallet] });
+      }
+    } catch {
+      plain = await window.ethereum.request({ method: "eth_decrypt", params: [encryptedPayload, wallet] });
+    }
+    setReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, plainText: plain, threadSecretKey: recoveredThreadKey || r.threadSecretKey || "" } : r)));
+    if (recoveredThreadKey) setThreadSecretKey(recoveredThreadKey);
     pushToast("success", `Report #${reportId} decrypted`);
   }
 
@@ -739,14 +816,102 @@ function App() {
     for (const r of reports) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        const encryptedPayload = await fetchEncryptedReportFromIpfs(r);
-        const plain = await window.ethereum.request({ method: "eth_decrypt", params: [encryptedPayload, wallet] });
-        setReports((prev) => prev.map((x) => (x.id === r.id ? { ...x, plainText: plain } : x)));
+        await decryptOne(r.id);
       } catch {
         // ignore per-report decrypt failure
       }
     }
     pushToast("success", "Decrypt-all finished");
+  }
+
+  async function loadReportMessages(reportId = threadReportId.trim()) {
+    if (!reportId) throw new Error("Please enter reportId");
+    const c = getReadContract();
+    const filter = c.filters.ReportMessageAdded(null, reportId, null);
+    const logs = await c.queryFilter(filter, 0, "latest");
+    const messages = await Promise.all(logs.map(async (log) => {
+      const id = log.args.messageId.toString();
+      const m = await c.reportMessages(id);
+      return {
+        id: Number(m.id),
+        reportId: m.reportId.toString(),
+        senderRole: Number(m.senderRole),
+        ipfsCID: m.ipfsCID,
+        contentHash: m.contentHash,
+        timestamp: Number(m.timestamp),
+        submittedBy: m.submittedBy,
+        plainText: ""
+      };
+    }));
+    messages.sort((a, b) => a.timestamp - b.timestamp || a.id - b.id);
+    setThreadMessages((prev) => ({ ...prev, [reportId]: messages }));
+    setThreadReportId(reportId);
+    pushToast("success", `Loaded ${messages.length} thread messages`);
+    return messages;
+  }
+
+  async function decryptThreadMessages(reportId = threadReportId.trim(), key = threadSecretKey.trim()) {
+    if (!reportId) throw new Error("Please enter reportId");
+    if (!key) throw new Error("Please enter the thread secret key");
+    const messages = threadMessages[reportId] || await loadReportMessages(reportId);
+    const decrypted = [];
+    for (const message of messages) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const payloadText = await fetchEncryptedReportFromIpfs(message);
+        const payload = JSON.parse(payloadText);
+        // eslint-disable-next-line no-await-in-loop
+        const plainText = await decryptWithThreadKey(key, payload.cipher);
+        decrypted.push({ ...message, plainText });
+      } catch (error) {
+        decrypted.push({ ...message, plainText: `(decrypt failed: ${parseErr(error)})` });
+      }
+    }
+    setThreadMessages((prev) => ({ ...prev, [reportId]: decrypted }));
+    pushToast("success", "Thread messages decrypted");
+  }
+
+  async function addThreadMessageOnChain(reportId, senderRole, text, key) {
+    if (!reportId) throw new Error("Please enter reportId");
+    if (!text.trim()) throw new Error("Please enter reply text");
+    if (!key.trim()) throw new Error("Please enter thread secret key");
+    const { payload, contentHash } = await buildThreadPayload({
+      type: senderRole === 1 ? "admin_reply" : "reporter_reply",
+      plainText: text.trim(),
+      secretKey: key.trim(),
+      reportId,
+      senderRole: String(senderRole)
+    });
+    const cid = await uploadEncryptedReportToIpfs(payload);
+
+    let tx;
+    if (senderRole === 2 || submitMode === "burner") {
+      const provider = getBurnerProvider();
+      const network = await provider.getNetwork();
+      if (network.chainId === 80002) throw new Error("Amoy burner replies still need POL. Use local/permissioned zero-gas RPC.");
+      const burner = ethers.Wallet.createRandom().connect(provider);
+      setLastBurnerAddress(burner.address);
+      const c = new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, burner);
+      tx = await c.addReportMessage(reportId, senderRole, cid, contentHash, { gasPrice: 0 });
+    } else {
+      tx = await getSignerContract().addReportMessage(reportId, senderRole, cid, contentHash);
+    }
+    await tx.wait();
+    await loadReportMessages(reportId);
+    pushToast("success", "Thread reply submitted");
+  }
+
+  async function adminSendReply(reportId) {
+    const report = reports.find((r) => r.id === reportId);
+    const key = report?.threadSecretKey || threadSecretKey;
+    const text = adminReplyDrafts[reportId] || "";
+    await addThreadMessageOnChain(String(reportId), 1, text, key);
+    setAdminReplyDrafts((prev) => ({ ...prev, [reportId]: "" }));
+  }
+
+  async function reporterSendReply() {
+    await addThreadMessageOnChain(threadReportId.trim(), 2, reporterReplyText, threadSecretKey.trim());
+    setReporterReplyText("");
   }
 
   const Btn = ({ label, k, onClick, primary = false, disabled = false }) => (
@@ -916,11 +1081,15 @@ function App() {
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>Admin Encryption Key</h3>
+                  <input value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="companyId for this public key" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Btn label={t.getAdminPub} k="getAdminPub" onClick={adminGetEncryptionPubKey} disabled={!canUse} />
                     <Btn label={t.setAdminPub} k="setAdminPub" onClick={adminSetEncryptionPubKey} primary disabled={!canUse} />
                   </div>
                   <textarea value={adminEncryptionPubKey} onChange={(e) => setAdminEncryptionPubKey(e.target.value)} placeholder="admin encryption public key" style={{ width: "100%", height: 100, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
+                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+                    This writes the public key to companies[companyId].adminPublicKey. Only the platform owner or that company's admin address can update it.
+                  </div>
                 </div>
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
@@ -971,6 +1140,32 @@ function App() {
                         <Btn label={t.updateStatus} k={`status_${r.id}`} onClick={() => updateReportStatus(r.id)} disabled={!canUse} />
                       </div>
                       <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>plain: {r.plainText || "(not decrypted)"}</div>
+                      <div style={{ marginTop: 10, borderTop: "1px solid #e5e7eb", paddingTop: 10 }}>
+                        <div style={{ fontWeight: 700, marginBottom: 6 }}>Anonymous thread</div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                          <Btn label={t.loadThread} k={`loadThread_${r.id}`} onClick={() => loadReportMessages(String(r.id))} disabled={!canRead} />
+                          <Btn label="Decrypt Thread" k={`decryptThread_${r.id}`} onClick={() => decryptThreadMessages(String(r.id), r.threadSecretKey || threadSecretKey)} disabled={!canUse} />
+                        </div>
+                        <textarea
+                          value={adminReplyDrafts[r.id] || ""}
+                          onChange={(e) => setAdminReplyDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                          placeholder="Admin reply / clarification question. It will be encrypted with this report's thread secret key."
+                          style={{ width: "100%", height: 72, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }}
+                        />
+                        <div style={{ marginTop: 8 }}><Btn label={t.sendReply} k={`adminReply_${r.id}`} onClick={() => adminSendReply(r.id)} disabled={!canUse || !(r.threadSecretKey || threadSecretKey)} /></div>
+                        {(threadMessages[String(r.id)] || []).length > 0 ? (
+                          <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                            {(threadMessages[String(r.id)] || []).map((m) => (
+                              <div key={m.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
+                                <div>message #{m.id} | {m.senderRole === 1 ? "Admin" : "Reporter"} | {new Date(m.timestamp * 1000).toLocaleString()}</div>
+                                <div>cid: {m.ipfsCID}</div>
+                                <div>hash: {m.contentHash}</div>
+                                <div style={{ whiteSpace: "pre-wrap" }}>plain: {m.plainText || "(encrypted)"}</div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1009,8 +1204,13 @@ function App() {
                   <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>proof artifacts: {proofArtifactsStatus}</div>
                   <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>prepared credential: {preparedCredentialContext || "-"}</div>
                   <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>messageHash: {messageHash || "-"}</div>
+                  <div style={{ marginTop: 8, border: "1px solid #facc15", background: "#fffbeb", borderRadius: 10, padding: 10, overflowWrap: "anywhere" }}>
+                    <strong>Save this thread secret key:</strong>
+                    <div style={{ marginTop: 4, fontFamily: "ui-monospace,monospace" }}>{threadSecretKey || "(generated after Encrypt + upload report)"}</div>
+                    <div style={{ marginTop: 4, color: "#92400e", fontSize: 13 }}>One report uses one symmetric key. Keep it private; it is required to read Admin replies and send anonymous follow-ups.</div>
+                  </div>
                   <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>proof scope: {proofScope || "-"}</div>
-                  <textarea value={encryptedReport} onChange={(e) => setEncryptedReport(e.target.value)} placeholder="encrypted report (hex)" style={{ width: "100%", height: 80, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
+                  <textarea value={encryptedReport} onChange={(e) => setEncryptedReport(e.target.value)} placeholder="hybrid encrypted report payload (JSON)" style={{ width: "100%", height: 80, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
                   <textarea value={proofJson} onChange={(e) => setProofJson(e.target.value)} placeholder="proof json" style={{ width: "100%", height: 160, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
                 </div>
 
@@ -1063,6 +1263,29 @@ function App() {
                       <div>plain: {r.plainText || "(no key / not decrypted)"}</div>
                     </div>
                   )) : <div style={{ marginTop: 8 }}>no reports</div>}
+                  <div style={{ marginTop: 12, borderTop: "1px solid #e5e7eb", paddingTop: 12 }}>
+                    <h3 style={{ margin: "0 0 8px" }}>Anonymous Thread Reply</h3>
+                    <input value={threadReportId} onChange={(e) => setThreadReportId(e.target.value)} placeholder="reportId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
+                    <textarea value={threadSecretKey} onChange={(e) => setThreadSecretKey(e.target.value)} placeholder="thread private key / symmetric key saved from initial report" style={{ width: "100%", height: 76, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace", marginBottom: 8 }} />
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                      <Btn label={t.loadThread} k="employeeLoadThread" onClick={() => loadReportMessages(threadReportId.trim())} disabled={!canRead} />
+                      <Btn label="Decrypt Replies" k="employeeDecryptThread" onClick={() => decryptThreadMessages(threadReportId.trim(), threadSecretKey.trim())} disabled={!canRead} />
+                    </div>
+                    <textarea value={reporterReplyText} onChange={(e) => setReporterReplyText(e.target.value)} placeholder="Reporter follow-up / rebuttal. It will be encrypted with the saved thread key and submitted by burner wallet." style={{ width: "100%", height: 84, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                    <div style={{ marginTop: 8 }}><Btn label={t.sendReply} k="reporterReply" onClick={reporterSendReply} primary disabled={!CONTRACT_ADDRESS} /></div>
+                    {(threadMessages[threadReportId.trim()] || []).length > 0 ? (
+                      <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                        {(threadMessages[threadReportId.trim()] || []).map((m) => (
+                          <div key={m.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8, overflowWrap: "anywhere" }}>
+                            <div>message #{m.id} | {m.senderRole === 1 ? "Admin" : "Reporter"} | {new Date(m.timestamp * 1000).toLocaleString()}</div>
+                            <div>cid: {m.ipfsCID}</div>
+                            <div>hash: {m.contentHash}</div>
+                            <div style={{ whiteSpace: "pre-wrap" }}>plain: {m.plainText || "(encrypted)"}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             )}
