@@ -171,6 +171,9 @@ function App() {
       decryptAll: "全部解密",
       loadThread: "載入案件對話",
       sendReply: "送出回覆",
+      decryptThread: "解密對話",
+      preloadProof: "預載 proof artifacts",
+      prepareCredential: "先產生匿名憑證",
       status: "狀態"
     },
     en: {
@@ -207,7 +210,209 @@ function App() {
       decryptAll: "Decrypt All",
       loadThread: "Load Thread",
       sendReply: "Send Reply",
+      decryptThread: "Decrypt Thread",
+      preloadProof: "Preload proof artifacts",
+      prepareCredential: "Prepare anonymous credential",
       status: "Status"
+    }
+  }[lang];
+
+  const ui = {
+    zh: {
+      saasTitle: "SaaS Admin：公司建立",
+      saasIntro: "PoC 版本：平台營運者只在這裡建立公司。舉報主題由各公司 Admin 在 Admin 分頁建立。",
+      groupTitle: "Admin：建立公司舉報主題",
+      groupIntro: "公司 Admin 可在自己的 companyId 下建立不同舉報主題，例如財務舞弊、職場騷擾、資安事件。",
+      membershipTitle: "Admin：員工群組管理",
+      encryptionTitle: "Admin 加密公鑰",
+      reportsTitle: "舉報案件",
+      step1Title: "步驟 1：員工匿名身份",
+      step2Title: "步驟 2：Proof 與加密舉報",
+      step3Title: "步驟 3：送出與查看",
+      anonymousThreadTitle: "匿名案件對話",
+      noReports: "目前沒有舉報紀錄",
+      notDecrypted: "尚未解密",
+      encryptedOnly: "已加密儲存在 Private IPFS",
+      storedInIpfs: "儲存在 Private IPFS，尚未讀取",
+      noKeyNotDecrypted: "沒有金鑰或尚未解密",
+      proofArtifacts: "proof artifacts",
+      preparedCredential: "已準備匿名憑證",
+      messageHash: "訊息雜湊",
+      proofScope: "proof scope",
+      identityCommitment: "identity commitment",
+      reporterCommitment: "reporter commitment",
+      lastBurner: "上次 burner address",
+      plain: "明文",
+      encrypted: "密文",
+      close: "關閉",
+      collapse: "收合",
+      expand: "展開",
+      success: "成功",
+      error: "失敗",
+      generatedAfterEncrypt: "按下「加密並上傳舉報」後產生",
+      threadKeyTitle: "請保存這組案件 thread secret key",
+      threadKeyHint: "每筆舉報只會有一組對稱金鑰。請私下保存，它會用來查看 Admin 回覆與送出匿名補充說明。",
+      memberPrivacyHint: "移除 commitment 會讓離職員工無法再用目前群組資格提交。公司可以知道 commitment 對應哪位員工，但舉報 proof 本身不會揭露是哪個 commitment 送出。",
+      companyKeyHint: "這會把公鑰寫入 companies[companyId].adminPublicKey。只有平台 owner 或該公司的 admin address 可以更新。",
+      burnerHint: "Burner wallet 是前端臨時產生的匿名交易錢包，適合本機或未來 gasPrice=0 的許可鏈。Amoy 是公測網，仍需要 POL 支付 gas。",
+      labels: {
+        companyId: "公司 ID",
+        newCompanyName: "新公司名稱",
+        reportGroupId: "舉報主題 ID / Report Group ID",
+        topicName: "舉報主題名稱",
+        maxReports: "每位員工可舉報次數",
+        employeeCommitment: "員工 identity commitment",
+        removeCommitment: "離職員工 commitment",
+        companyPubKeyId: "要設定公鑰的公司 ID",
+        adminPubKey: "公司 Admin 加密公鑰",
+        ipfsGateway: "Private IPFS Gateway",
+        reportCompanyFilter: "查詢公司 ID",
+        period: "舉報期間 / Period",
+        reportSlot: "舉報次數 slot",
+        ipfsCID: "IPFS CID",
+        reportPlaintext: "舉報內容",
+        encryptedPayload: "Hybrid encrypted payload",
+        proofJson: "ZK proof JSON",
+        burnerRpc: "Zero-gas RPC URL",
+        ipfsClusterApi: "IPFS Cluster API",
+        ipfsUser: "IPFS Cluster 使用者",
+        ipfsPassword: "IPFS Cluster 密碼",
+        threadReportId: "案件 Report ID",
+        threadSecretKey: "案件 thread secret key",
+        reporterReply: "舉報者補充 / 反駁內容",
+        statusNote: "案件狀態備註",
+        adminReply: "Admin 追問 / 回覆內容",
+        identityPrivateKey: "員工 identity privateKey(base64)",
+        reporterPrivateKey: "舉報者 identity privateKey(base64)"
+      },
+      examples: {
+        companyId: "例如：2。合約中的公司編號，用來區分不同公司。",
+        newCompanyName: "例如：TSMC。建立公司時填入公司名稱。",
+        reportGroupId: "例如：1。要管理或送出的舉報主題編號。",
+        topicName: "例如：財務舞弊、職場騷擾、資安事件。",
+        maxReports: "例如：3。代表每位員工在同一期間最多可用 slot 1 到 3。",
+        employeeCommitment: "由 Employee 產生 Identity 後提供，只填 commitment，不填 private key。",
+        removeCommitment: "填入要退出群組的離職員工 commitment。",
+        companyPubKeyId: "例如：2。設定哪一間公司的 Admin public key。",
+        adminPubKey: "按「取得 Admin 加密公鑰」後會自動填入，也可手動貼上。",
+        ipfsGateway: "例如：http://127.0.0.1:8080。Admin 用它依 CID 讀取密文。",
+        reportCompanyFilter: "例如：2。只查詢這間公司的舉報。",
+        period: "例如：2026-Q1。會成為 nullifier scope 的一部分。",
+        reportSlot: "例如：1。若每人可舉報 3 次，可使用 1、2、3。",
+        ipfsCID: "burner 模式會自動上傳並回填；手動模式請貼上 IPFS CID。",
+        reportPlaintext: "填寫要舉報的明文內容，送出前會在前端加密。",
+        encryptedPayload: "加密後的 JSON payload，通常不用手動修改。",
+        proofJson: "Prepare anonymous credential 後產生，通常不用手動修改。",
+        burnerRpc: "例如：http://127.0.0.1:8545。許可鏈 / 本機鏈可用 gasPrice=0。",
+        ipfsClusterApi: "例如：http://127.0.0.1:9094。用來把密文上傳到 Private IPFS。",
+        ipfsUser: "例如：admin。來自 private-ipfs-cluster/.env。",
+        ipfsPassword: "填 private-ipfs-cluster/.env 裡的 CLUSTER_API_PASSWORD。",
+        threadReportId: "例如：1。要讀取或回覆哪一筆案件對話。",
+        threadSecretKey: "初次舉報加密後顯示，舉報者必須保存。",
+        reporterReply: "例如：補充發生時間、地點，或反駁處理結果。",
+        statusNote: "例如：已請調查單位補件，或已確認進入調查。",
+        adminReply: "例如：請補充發生日期、地點或佐證資料。",
+        identityPrivateKey: "由 Generate Identity 產生，員工自己保存。",
+        reporterPrivateKey: "測試不同 Employee 身份時可貼入自己的 Identity。"
+      }
+    },
+    en: {
+      saasTitle: "SaaS Admin: Company Onboarding",
+      saasIntro: "PoC version: the platform operator only creates companies here. Report groups are created by each company's Admin in the Admin tab.",
+      groupTitle: "Admin: Create Company Report Group",
+      groupIntro: "Company Admin creates report topics under its own companyId, such as financial fraud, harassment, or cybersecurity incidents.",
+      membershipTitle: "Admin: Employee Membership",
+      encryptionTitle: "Admin Encryption Key",
+      reportsTitle: "Reports",
+      step1Title: "Step 1: Anonymous Employee Identity",
+      step2Title: "Step 2: Proof + Encrypted Report",
+      step3Title: "Step 3: Submit + View",
+      anonymousThreadTitle: "Anonymous Thread Reply",
+      noReports: "No reports yet",
+      notDecrypted: "not decrypted",
+      encryptedOnly: "stored in private IPFS",
+      storedInIpfs: "stored in Private IPFS, not fetched yet",
+      noKeyNotDecrypted: "no key or not decrypted",
+      proofArtifacts: "proof artifacts",
+      preparedCredential: "prepared credential",
+      messageHash: "message hash",
+      proofScope: "proof scope",
+      identityCommitment: "identity commitment",
+      reporterCommitment: "reporter commitment",
+      lastBurner: "last burner address",
+      plain: "plain",
+      encrypted: "encrypted",
+      close: "Close",
+      collapse: "Collapse",
+      expand: "Expand",
+      success: "Success",
+      error: "Error",
+      generatedAfterEncrypt: "generated after Encrypt + upload report",
+      threadKeyTitle: "Save this report thread secret key",
+      threadKeyHint: "One report uses one symmetric key. Keep it private; it is required to read Admin replies and send anonymous follow-ups.",
+      memberPrivacyHint: "Removing a commitment prevents future credentials from the current member tree. Company HR may know which employee owns a commitment, but submitted reports remain unlinkable to a specific commitment through the proof alone.",
+      companyKeyHint: "This writes the public key to companies[companyId].adminPublicKey. Only the platform owner or that company's admin address can update it.",
+      burnerHint: "Burner wallet is a temporary anonymous transaction wallet created by the frontend. It is intended for local or future permissioned chains with gasPrice=0. Amoy is a public testnet and still requires POL.",
+      labels: {
+        companyId: "Company ID",
+        newCompanyName: "New company name",
+        reportGroupId: "Report Group ID",
+        topicName: "Report topic name",
+        maxReports: "Max reports per employee",
+        employeeCommitment: "Employee identity commitment",
+        removeCommitment: "Ex-employee commitment",
+        companyPubKeyId: "Company ID for this public key",
+        adminPubKey: "Company Admin encryption public key",
+        ipfsGateway: "Private IPFS Gateway",
+        reportCompanyFilter: "Company ID filter",
+        period: "Reporting period",
+        reportSlot: "Report slot",
+        ipfsCID: "IPFS CID",
+        reportPlaintext: "Report content",
+        encryptedPayload: "Hybrid encrypted payload",
+        proofJson: "ZK proof JSON",
+        burnerRpc: "Zero-gas RPC URL",
+        ipfsClusterApi: "IPFS Cluster API",
+        ipfsUser: "IPFS Cluster user",
+        ipfsPassword: "IPFS Cluster password",
+        threadReportId: "Report ID",
+        threadSecretKey: "Thread secret key",
+        reporterReply: "Reporter follow-up / rebuttal",
+        statusNote: "Status note",
+        adminReply: "Admin clarification / reply",
+        identityPrivateKey: "Employee identity privateKey(base64)",
+        reporterPrivateKey: "Reporter identity privateKey(base64)"
+      },
+      examples: {
+        companyId: "e.g. 2. The company id stored in the contract.",
+        newCompanyName: "e.g. TSMC. Used when creating a company.",
+        reportGroupId: "e.g. 1. The report topic/group to manage or submit to.",
+        topicName: "e.g. financial fraud, harassment, cybersecurity incident.",
+        maxReports: "e.g. 3. Allows each member to use slots 1 to 3 in the same period.",
+        employeeCommitment: "Generated by Employee Identity. Only paste the commitment, never the private key.",
+        removeCommitment: "Paste the ex-employee commitment to remove from this group.",
+        companyPubKeyId: "e.g. 2. Which company's Admin public key to update.",
+        adminPubKey: "Click Get Admin Encryption PubKey to fill this, or paste it manually.",
+        ipfsGateway: "e.g. http://127.0.0.1:8080. Admin fetches ciphertext by CID through this gateway.",
+        reportCompanyFilter: "e.g. 2. Load only this company's reports.",
+        period: "e.g. 2026-Q1. This becomes part of the nullifier scope.",
+        reportSlot: "e.g. 1. If max reports is 3, use slots 1, 2, and 3.",
+        ipfsCID: "Burner mode uploads and fills this automatically; manual mode needs an IPFS CID.",
+        reportPlaintext: "Write the plaintext report. The frontend encrypts it before upload.",
+        encryptedPayload: "Encrypted JSON payload. Usually no manual edits needed.",
+        proofJson: "Generated after Prepare anonymous credential. Usually no manual edits needed.",
+        burnerRpc: "e.g. http://127.0.0.1:8545. Permissioned/local zero-gas RPC.",
+        ipfsClusterApi: "e.g. http://127.0.0.1:9094. Used to upload ciphertext to Private IPFS.",
+        ipfsUser: "e.g. admin. Read from private-ipfs-cluster/.env.",
+        ipfsPassword: "Use CLUSTER_API_PASSWORD from private-ipfs-cluster/.env.",
+        threadReportId: "e.g. 1. Which report thread to read or reply to.",
+        threadSecretKey: "Shown after initial report encryption. The reporter must save it.",
+        reporterReply: "e.g. add incident time/location or rebut a decision.",
+        statusNote: "e.g. requested more evidence, or moved to formal investigation.",
+        adminReply: "e.g. please provide date, location, or supporting files.",
+        identityPrivateKey: "Generated by Generate Identity and kept by the employee.",
+        reporterPrivateKey: "Paste a reporter identity when testing different employees."
+      }
     }
   }[lang];
 
@@ -242,7 +447,10 @@ function App() {
   function getReadProvider() { return submitMode === "burner" ? getBurnerProvider() : getProvider(); }
   function getReadContract() { return new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getReadProvider()); }
   function reportStatusLabel(status) {
-    return ["Submitted", "Reviewing", "Confirmed", "Rejected", "Closed"][Number(status)] || "Unknown";
+    const labels = lang === "zh"
+      ? ["已送出", "審查中", "已確認", "已駁回", "已結案"]
+      : ["Submitted", "Reviewing", "Confirmed", "Rejected", "Closed"];
+    return labels[Number(status)] || (lang === "zh" ? "未知" : "Unknown");
   }
 
   function getProofDepth() {
@@ -393,7 +601,7 @@ function App() {
   }
 
   async function connectWallet() {
-    if (!window.ethereum) throw new Error("隢?摰? MetaMask");
+    if (!window.ethereum) throw new Error(lang === "zh" ? "請先安裝 MetaMask" : "Please install MetaMask");
     const [account] = await window.ethereum.request({ method: "eth_requestAccounts" });
     setWallet(account || "");
     setStatus("Wallet connected");
@@ -401,7 +609,7 @@ function App() {
   }
 
   async function switchToLocal() {
-    if (!window.ethereum) throw new Error("隢?摰? MetaMask");
+    if (!window.ethereum) throw new Error(lang === "zh" ? "請先安裝 MetaMask" : "Please install MetaMask");
     try {
       await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: LOCAL_CHAIN_HEX }] });
     } catch (e) {
@@ -414,7 +622,7 @@ function App() {
   }
 
   async function switchToAmoy() {
-    if (!window.ethereum) throw new Error("隢?摰? MetaMask");
+    if (!window.ethereum) throw new Error(lang === "zh" ? "請先安裝 MetaMask" : "Please install MetaMask");
     try {
       await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: AMOY_CHAIN_HEX }] });
     } catch (e) {
@@ -427,7 +635,7 @@ function App() {
   }
 
   async function checkContractHealth() {
-    if (!canRead) throw new Error("隢?閮剖????啣?嚗???burner 璅∪?閮剖? RPC");
+    if (!canRead) throw new Error(lang === "zh" ? "請設定合約地址；若使用 burner 模式也請設定 RPC" : "Please set the contract address; in burner mode also set the RPC URL");
     const provider = getReadProvider();
     const net = await provider.getNetwork();
     const code = await provider.getCode(CONTRACT_ADDRESS);
@@ -445,7 +653,7 @@ function App() {
 
   async function checkIpfsHealth() {
     const gateway = ipfsGateway.trim().replace(/\/+$/, "");
-    if (!gateway) throw new Error("隢?閮剖? Private IPFS Gateway");
+    if (!gateway) throw new Error(lang === "zh" ? "請填寫 Private IPFS Gateway" : "Please enter Private IPFS Gateway");
 
     const startedAt = performance.now();
     let gatewayText = "gateway=unreachable";
@@ -455,14 +663,14 @@ function App() {
       const response = await fetch(gateway, { method: "GET", cache: "no-store" });
       gatewayText = `gateway=reachable status=${response.status}`;
     } catch (error) {
-      throw new Error(`IPFS Gateway ?⊥????: ${parseErr(error)}`);
+      throw new Error(`${lang === "zh" ? "IPFS Gateway 連線失敗" : "IPFS Gateway connection failed"}: ${parseErr(error)}`);
     }
 
     const cid = ipfsCID.trim();
     if (cid) {
       const response = await fetch(`${gateway}/ipfs/${cid}`, { cache: "no-store" });
       if (!response.ok) {
-        throw new Error(`IPFS CID 霈?仃?? status=${response.status}`);
+        throw new Error(`${lang === "zh" ? "IPFS CID 讀取失敗" : "IPFS CID fetch failed"}: status=${response.status}`);
       }
       const text = await response.text();
       cidText = `cid=ok bytes=${text.length}`;
@@ -574,7 +782,7 @@ function App() {
 
   async function adminCreateCompany() {
     const name = companyName.trim();
-    if (!name) throw new Error("隢撓??company name");
+    if (!name) throw new Error(lang === "zh" ? "請填寫公司名稱" : "Please enter company name");
     const adminAddress = wallet || await getProvider().getSigner().getAddress();
     const tx = await getSignerContract().createCompany(name, adminEncryptionPubKey.trim(), adminAddress);
     const receipt = await tx.wait();
@@ -586,10 +794,10 @@ function App() {
   }
 
   async function adminCreateReportGroup() {
-    if (!companyId.trim()) throw new Error("隢撓??companyId");
-    if (!topicName.trim()) throw new Error("隢撓??topic name");
+    if (!companyId.trim()) throw new Error(lang === "zh" ? "請填寫公司 ID" : "Please enter companyId");
+    if (!topicName.trim()) throw new Error(lang === "zh" ? "請填寫舉報主題名稱" : "Please enter topic name");
     const maxReports = Number(maxReportsPerMember || "0");
-    if (!Number.isInteger(maxReports) || maxReports <= 0) throw new Error("maxReportsPerMember 敹?憭扳 0");
+    if (!Number.isInteger(maxReports) || maxReports <= 0) throw new Error(lang === "zh" ? "每位員工可舉報次數必須大於 0" : "maxReportsPerMember must be greater than 0");
     const now = Math.floor(Date.now() / 1000);
     const end = now + 60 * 60 * 24 * 365;
     const tx = await getSignerContract().createReportGroup(companyId.trim(), topicName.trim(), maxReports, now, end);
@@ -770,7 +978,7 @@ function App() {
   }
 
   async function decryptOne(reportId) {
-    if (!wallet) throw new Error("隢??? Admin ?Ｗ?");
+    if (!wallet) throw new Error(lang === "zh" ? "請先連接 Admin 錢包" : "Please connect Admin wallet first");
     const target = reports.find((r) => r.id === reportId);
     if (!target) return;
     const encryptedPayload = await fetchEncryptedReportFromIpfs(target);
@@ -914,6 +1122,47 @@ function App() {
     setReporterReplyText("");
   }
 
+  const inputStyle = {
+    width: "100%",
+    border: "1px solid #d1d5db",
+    borderRadius: 8,
+    padding: "9px 10px",
+    boxSizing: "border-box"
+  };
+  const monoStyle = { fontFamily: "ui-monospace,monospace" };
+
+  const HelpText = ({ children }) => (
+    <div style={{ marginTop: 5, fontSize: 12.5, color: "#64748b", lineHeight: 1.45 }}>{children}</div>
+  );
+
+  const Field = ({ label, hint, value, onChange, placeholder, type = "text", style = {}, inputProps = {} }) => (
+    <label style={{ display: "block", marginBottom: 10, ...style }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{label}</div>
+      <input
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        type={type}
+        style={inputStyle}
+        {...inputProps}
+      />
+      {hint ? <HelpText>{hint}</HelpText> : null}
+    </label>
+  );
+
+  const TextAreaField = ({ label, hint, value, onChange, placeholder, height = 88, mono = false, style = {} }) => (
+    <label style={{ display: "block", marginBottom: 10, ...style }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{label}</div>
+      <textarea
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        style={{ ...inputStyle, height, ...(mono ? monoStyle : {}) }}
+      />
+      {hint ? <HelpText>{hint}</HelpText> : null}
+    </label>
+  );
+
   const Btn = ({ label, k, onClick, primary = false, disabled = false }) => (
     <button
       style={{
@@ -929,7 +1178,7 @@ function App() {
       disabled={disabled || !!loading[k]}
       onClick={() => withLoading(k, () => safeRun(onClick))}
     >
-      {loading[k] ? "??" : ""}{label}
+      {loading[k] ? "... " : ""}{label}
     </button>
   );
 
@@ -938,7 +1187,7 @@ function App() {
       <div style={{ position: "fixed", right: 16, top: 16, zIndex: 9999, display: "grid", gap: 8 }}>
         {toasts.map((x) => (
           <div key={x.id} style={{ minWidth: 280, maxWidth: 420, borderRadius: 10, border: "1px solid " + (x.kind === "success" ? "#86efac" : "#fca5a5"), background: x.kind === "success" ? "#f0fdf4" : "#fef2f2", color: x.kind === "success" ? "#166534" : "#991b1b", padding: "10px 12px" }}>
-            <strong>{x.kind === "success" ? "Success" : "Error"}</strong>
+            <strong>{x.kind === "success" ? ui.success : ui.error}</strong>
             <div>{x.msg}</div>
           </div>
         ))}
@@ -950,7 +1199,7 @@ function App() {
             <div style={{ position: "sticky", top: 0, background: "#fff", borderBottom: "1px solid #e5e7eb", padding: 14, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
               <h2 style={{ margin: 0 }}>{helpCopy.title}</h2>
               <button onClick={() => setShowHelp(false)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "7px 10px", background: "#fff", cursor: "pointer" }}>
-                {lang === "zh" ? "關閉" : "Close"}
+                {ui.close}
               </button>
             </div>
             <div style={{ padding: 16, display: "grid", gap: 14, lineHeight: 1.65, color: "#0f172a" }}>
@@ -1003,7 +1252,7 @@ function App() {
           <aside style={{ borderRight: "1px solid #e5e7eb", padding: 12, background: "#f8fafc" }}>
             <div style={{ display: "flex", justifyContent: showPanel ? "space-between" : "center", marginBottom: 10 }}>
               {showPanel ? <strong>{t.control}</strong> : null}
-              <button onClick={() => setShowPanel((v) => !v)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", background: "#fff", cursor: "pointer" }}>{showPanel ? "收合" : "展開"}</button>
+              <button onClick={() => setShowPanel((v) => !v)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", background: "#fff", cursor: "pointer" }}>{showPanel ? ui.collapse : ui.expand}</button>
             </div>
             {showPanel ? (
               <>
@@ -1021,12 +1270,7 @@ function App() {
                     <Btn label={t.gid} k="gid" onClick={loadGroupId} disabled={!canRead} />
                     <Btn label={t.members} k="members" onClick={loadMembersFromEvents} disabled={!canRead} />
                   </div>
-                  <input
-                    value={ipfsGateway}
-                    onChange={(e) => setIpfsGateway(e.target.value)}
-                    placeholder="Private IPFS Gateway, e.g. http://127.0.0.1:8080"
-                    style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginTop: 10 }}
-                  />
+                  <Field label={ui.labels.ipfsGateway} hint={ui.examples.ipfsGateway} value={ipfsGateway} onChange={(e) => setIpfsGateway(e.target.value)} placeholder="e.g. http://127.0.0.1:8080" style={{ marginTop: 10 }} />
                   <div style={{ marginTop: 10, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{diag || "Diag: -"}</div>
                 </div>
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10 }}>
@@ -1049,108 +1293,113 @@ function App() {
             {activeTab === "saasAdmin" ? (
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                  <h3 style={{ marginTop: 0 }}>SaaS Admin: Company / Group Onboarding</h3>
-                  <p style={{ color: "#64748b", marginTop: 0 }}>PoC version: platform operator creates companies and report groups here.</p>
-                  <input value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="companyId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
-                  <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="new company name" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
+                  <h3 style={{ marginTop: 0 }}>{ui.saasTitle}</h3>
+                  <p style={{ color: "#64748b", marginTop: 0 }}>{ui.saasIntro}</p>
+                  <Field label={ui.labels.companyId} hint={ui.examples.companyId} value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="e.g. 2" />
+                  <Field label={ui.labels.newCompanyName} hint={ui.examples.newCompanyName} value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. TSMC" />
                   <div style={{ marginBottom: 12 }}><Btn label={t.createCompany} k="createCompany" onClick={adminCreateCompany} disabled={!canUse} /></div>
-                  <input value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="reportGroupId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
-                  <input value={topicName} onChange={(e) => setTopicName(e.target.value)} placeholder="topic name, e.g. financial fraud" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
-                  <input value={maxReportsPerMember} onChange={(e) => setMaxReportsPerMember(e.target.value)} placeholder="max reports per member" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
-                  <div style={{ marginBottom: 12 }}><Btn label={t.createGroup} k="createGroup" onClick={adminCreateReportGroup} disabled={!canUse} /></div>
-                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>companyId: {companyId || "-"} | reportGroupId: {reportGroupId || "-"} | Semaphore groupId: {groupId || "-"}</div>
+                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>companyId: {companyId || "-"}</div>
                 </div>
               </div>
             ) : activeTab === "admin" ? (
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                  <h3>{t.admin}: Employee Membership</h3>
-                  <input value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="reportGroupId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
-                  <input value={newMemberCommitment} onChange={(e) => setNewMemberCommitment(e.target.value)} placeholder="employee identity commitment" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                  <h3 style={{ marginTop: 0 }}>{ui.groupTitle}</h3>
+                  <p style={{ color: "#64748b", marginTop: 0 }}>{ui.groupIntro}</p>
+                  <Field label={ui.labels.companyId} hint={ui.examples.companyId} value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="e.g. 2" />
+                  <Field label={ui.labels.reportGroupId} hint={ui.examples.reportGroupId} value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="e.g. 1" />
+                  <Field label={ui.labels.topicName} hint={ui.examples.topicName} value={topicName} onChange={(e) => setTopicName(e.target.value)} placeholder={lang === "zh" ? "例如：財務舞弊" : "e.g. financial fraud"} />
+                  <Field label={ui.labels.maxReports} hint={ui.examples.maxReports} value={maxReportsPerMember} onChange={(e) => setMaxReportsPerMember(e.target.value)} placeholder="e.g. 3" />
+                  <div style={{ marginBottom: 12 }}><Btn label={t.createGroup} k="createGroup" onClick={adminCreateReportGroup} disabled={!canUse} /></div>
+                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>companyId: {companyId || "-"} | reportGroupId: {reportGroupId || "-"} | Semaphore groupId: {groupId || "-"}</div>
+                </div>
+
+                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
+                  <h3>{ui.membershipTitle}</h3>
+                  <Field label={ui.labels.reportGroupId} hint={ui.examples.reportGroupId} value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="e.g. 1" />
+                  <Field label={ui.labels.employeeCommitment} hint={ui.examples.employeeCommitment} value={newMemberCommitment} onChange={(e) => setNewMemberCommitment(e.target.value)} placeholder="e.g. 2054340674573900..." />
                   <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Btn label={t.addEmployee} k="addEmployee" onClick={adminAddEmployee} primary disabled={!canUse} />
                     <Btn label={t.members} k="loadMembersAdmin" onClick={loadMembersFromEvents} disabled={!canRead} />
                   </div>
-                  <input value={removeMemberCommitment} onChange={(e) => setRemoveMemberCommitment(e.target.value)} placeholder="ex-employee commitment to remove" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginTop: 8 }} />
+                  <Field label={ui.labels.removeCommitment} hint={ui.examples.removeCommitment} value={removeMemberCommitment} onChange={(e) => setRemoveMemberCommitment(e.target.value)} placeholder="e.g. 2054340674573900..." style={{ marginTop: 10 }} />
                   <div style={{ marginTop: 8 }}><Btn label={t.removeEmployee} k="removeEmployee" onClick={adminRemoveEmployee} disabled={!canUse} /></div>
                   <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>reportGroupId: {reportGroupId || "-"} | Semaphore groupId: {groupId || "-"} | active members loaded: {members.length}</div>
-                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
-                    Removing a commitment prevents future credentials from the current member tree. Company HR may know which employee owns a commitment, but submitted reports remain unlinkable to a specific commitment through the proof alone.
-                  </div>
+                  <HelpText>{ui.memberPrivacyHint}</HelpText>
                 </div>
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                  <h3 style={{ marginTop: 0 }}>Admin Encryption Key</h3>
-                  <input value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="companyId for this public key" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
+                  <h3 style={{ marginTop: 0 }}>{ui.encryptionTitle}</h3>
+                  <Field label={ui.labels.companyPubKeyId} hint={ui.examples.companyPubKeyId} value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="e.g. 2" />
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Btn label={t.getAdminPub} k="getAdminPub" onClick={adminGetEncryptionPubKey} disabled={!canUse} />
                     <Btn label={t.setAdminPub} k="setAdminPub" onClick={adminSetEncryptionPubKey} primary disabled={!canUse} />
                   </div>
-                  <textarea value={adminEncryptionPubKey} onChange={(e) => setAdminEncryptionPubKey(e.target.value)} placeholder="admin encryption public key" style={{ width: "100%", height: 100, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
-                  <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
-                    This writes the public key to companies[companyId].adminPublicKey. Only the platform owner or that company's admin address can update it.
-                  </div>
+                  <TextAreaField label={ui.labels.adminPubKey} hint={ui.examples.adminPubKey} value={adminEncryptionPubKey} onChange={(e) => setAdminEncryptionPubKey(e.target.value)} placeholder="e.g. 5i3P8..." height={110} mono style={{ marginTop: 10 }} />
+                  <HelpText>{ui.companyKeyHint}</HelpText>
                 </div>
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                  <h3 style={{ marginTop: 0 }}>Reports</h3>
-                  <input
-                    value={ipfsGateway}
-                    onChange={(e) => setIpfsGateway(e.target.value)}
-                    placeholder="Private IPFS Gateway, e.g. http://127.0.0.1:8080"
-                    style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }}
-                  />
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                    <input value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="companyId" style={{ width: 120, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                  <h3 style={{ marginTop: 0 }}>{ui.reportsTitle}</h3>
+                  <Field label={ui.labels.ipfsGateway} hint={ui.examples.ipfsGateway} value={ipfsGateway} onChange={(e) => setIpfsGateway(e.target.value)} placeholder="e.g. http://127.0.0.1:8080" />
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 240px) auto auto auto", gap: 8, alignItems: "end", marginBottom: 8 }}>
+                    <Field label={ui.labels.reportCompanyFilter} hint={ui.examples.reportCompanyFilter} value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="e.g. 2" style={{ marginBottom: 0 }} />
                     <Btn label={t.loadCompanyReports} k="loadCompanyReports" onClick={() => loadAllReports(true)} disabled={!canUse} />
                     <Btn label={t.loadReports} k="loadReports" onClick={() => loadAllReports(false)} disabled={!canUse} />
                     <Btn label={t.decryptAll} k="decryptAll" onClick={decryptAll} disabled={!canUse || reports.length === 0} />
                   </div>
-                  {reports.length === 0 ? <div>no reports</div> : reports.map((r) => (
+                  {reports.length === 0 ? <div>{ui.noReports}</div> : reports.map((r) => (
                     <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginBottom: 8, overflowWrap: "anywhere" }}>
                       <div><strong>#{r.id}</strong> | {new Date(r.timestamp * 1000).toLocaleString()}</div>
                       <div>companyId: {r.companyId} | reportGroupId: {r.reportGroupId}</div>
                       <div>period: {r.period} | slot: {r.reportSlot}</div>
                       <div>ipfsCID: {r.ipfsCID}</div>
                       <div>messageHash: {r.messageHash}</div>
-                      <div>status: {reportStatusLabel(r.status)}{r.statusNote ? ` | note: ${r.statusNote}` : ""}</div>
+                      <div>{t.status}: {reportStatusLabel(r.status)}{r.statusNote ? ` | ${lang === "zh" ? "備註" : "note"}: ${r.statusNote}` : ""}</div>
                       <div>nullifier: {r.nullifier}</div>
                       <div>scope: {r.scope}</div>
                       <div>sender: {r.submittedBy}</div>
-                      <div>encrypted: {r.encryptedReport ? `${r.encryptedReport.slice(0, 80)}...` : "(fetch by ipfsCID)"}</div>
+                      <div>{ui.encrypted}: {r.encryptedReport ? `${r.encryptedReport.slice(0, 80)}...` : `(${lang === "zh" ? "可用 ipfsCID 讀取" : "fetch by ipfsCID"})`}</div>
                       <div style={{ marginTop: 6 }}><Btn label={t.decrypt} k={`decrypt_${r.id}`} onClick={() => decryptOne(r.id)} disabled={!canUse} /></div>
                       <div style={{ display: "grid", gridTemplateColumns: "160px 1fr auto", gap: 8, marginTop: 8 }}>
-                        <select
-                          value={reportStatusDrafts[r.id]?.status ?? r.status}
-                          onChange={(e) => setReportStatusDrafts((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), status: e.target.value } }))}
-                          style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px" }}
-                        >
-                          <option value="0">Submitted</option>
-                          <option value="1">Reviewing</option>
-                          <option value="2">Confirmed</option>
-                          <option value="3">Rejected</option>
-                          <option value="4">Closed</option>
-                        </select>
-                        <input
+                        <label style={{ display: "block" }}>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{t.status}</div>
+                          <select
+                            value={reportStatusDrafts[r.id]?.status ?? r.status}
+                            onChange={(e) => setReportStatusDrafts((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), status: e.target.value } }))}
+                            style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px" }}
+                          >
+                            <option value="0">{lang === "zh" ? "已送出" : "Submitted"}</option>
+                            <option value="1">{lang === "zh" ? "審查中" : "Reviewing"}</option>
+                            <option value="2">{lang === "zh" ? "已確認" : "Confirmed"}</option>
+                            <option value="3">{lang === "zh" ? "已駁回" : "Rejected"}</option>
+                            <option value="4">{lang === "zh" ? "已結案" : "Closed"}</option>
+                          </select>
+                        </label>
+                        <Field
+                          label={ui.labels.statusNote}
+                          hint={ui.examples.statusNote}
                           value={reportStatusDrafts[r.id]?.note ?? r.statusNote}
                           onChange={(e) => setReportStatusDrafts((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), note: e.target.value } }))}
-                          placeholder="status note after reviewing content"
-                          style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px" }}
+                          placeholder={lang === "zh" ? "例如：已進入調查" : "e.g. moved to investigation"}
+                          style={{ marginBottom: 0 }}
                         />
                         <Btn label={t.updateStatus} k={`status_${r.id}`} onClick={() => updateReportStatus(r.id)} disabled={!canUse} />
                       </div>
-                      <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>plain: {r.plainText || "(not decrypted)"}</div>
+                      <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{ui.plain}: {r.plainText || `(${ui.notDecrypted})`}</div>
                       <div style={{ marginTop: 10, borderTop: "1px solid #e5e7eb", paddingTop: 10 }}>
-                        <div style={{ fontWeight: 700, marginBottom: 6 }}>Anonymous thread</div>
+                        <div style={{ fontWeight: 700, marginBottom: 6 }}>{ui.anonymousThreadTitle}</div>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                           <Btn label={t.loadThread} k={`loadThread_${r.id}`} onClick={() => loadReportMessages(String(r.id))} disabled={!canRead} />
-                          <Btn label="Decrypt Thread" k={`decryptThread_${r.id}`} onClick={() => decryptThreadMessages(String(r.id), r.threadSecretKey || threadSecretKey)} disabled={!canUse} />
+                          <Btn label={t.decryptThread} k={`decryptThread_${r.id}`} onClick={() => decryptThreadMessages(String(r.id), r.threadSecretKey || threadSecretKey)} disabled={!canUse} />
                         </div>
-                        <textarea
+                        <TextAreaField
+                          label={ui.labels.adminReply}
+                          hint={ui.examples.adminReply}
                           value={adminReplyDrafts[r.id] || ""}
                           onChange={(e) => setAdminReplyDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                          placeholder="Admin reply / clarification question. It will be encrypted with this report's thread secret key."
-                          style={{ width: "100%", height: 72, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }}
+                          placeholder={lang === "zh" ? "例如：請補充發生日期與佐證" : "e.g. please provide date and evidence"}
+                          height={72}
                         />
                         <div style={{ marginTop: 8 }}><Btn label={t.sendReply} k={`adminReply_${r.id}`} onClick={() => adminSendReply(r.id)} disabled={!canUse || !(r.threadSecretKey || threadSecretKey)} /></div>
                         {(threadMessages[String(r.id)] || []).length > 0 ? (
@@ -1160,7 +1409,7 @@ function App() {
                                 <div>message #{m.id} | {m.senderRole === 1 ? "Admin" : "Reporter"} | {new Date(m.timestamp * 1000).toLocaleString()}</div>
                                 <div>cid: {m.ipfsCID}</div>
                                 <div>hash: {m.contentHash}</div>
-                                <div style={{ whiteSpace: "pre-wrap" }}>plain: {m.plainText || "(encrypted)"}</div>
+                                <div style={{ whiteSpace: "pre-wrap" }}>{ui.plain}: {m.plainText || `(${ui.encryptedOnly})`}</div>
                               </div>
                             ))}
                           </div>
@@ -1173,49 +1422,48 @@ function App() {
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                  <h3 style={{ marginTop: 0 }}>Step 1: Identity</h3>
+                  <h3 style={{ marginTop: 0 }}>{ui.step1Title}</h3>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Btn label={t.genIdentity} k="genIdentity" onClick={async () => createIdentity()} />
                     <Btn label={t.importIdentity} k="importIdentity" onClick={async () => importIdentity()} />
                     <Btn label={t.previewReporter} k="previewReporter" onClick={async () => previewReporter()} />
                   </div>
-                  <textarea value={identityExport} onChange={(e) => setIdentityExport(e.target.value)} placeholder="employee privateKey(base64)" style={{ width: "100%", height: 88, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
-                  <div>identity commitment: {identityCommitment || "-"}</div>
-                  <textarea value={reporterIdentityExport} onChange={(e) => setReporterIdentityExport(e.target.value)} placeholder="reporter privateKey(base64)" style={{ width: "100%", height: 88, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
-                  <div>reporter commitment: {reporterCommitmentPreview || "-"}</div>
+                  <TextAreaField label={ui.labels.identityPrivateKey} hint={ui.examples.identityPrivateKey} value={identityExport} onChange={(e) => setIdentityExport(e.target.value)} placeholder="e.g. eyJ0cmFwZG9vciI6..." height={88} mono style={{ marginTop: 10 }} />
+                  <div>{ui.identityCommitment}: {identityCommitment || "-"}</div>
+                  <TextAreaField label={ui.labels.reporterPrivateKey} hint={ui.examples.reporterPrivateKey} value={reporterIdentityExport} onChange={(e) => setReporterIdentityExport(e.target.value)} placeholder="e.g. eyJ0cmFwZG9vciI6..." height={88} mono style={{ marginTop: 10 }} />
+                  <div>{ui.reporterCommitment}: {reporterCommitmentPreview || "-"}</div>
                 </div>
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                  <h3 style={{ marginTop: 0 }}>Step 2: Proof + Encryption</h3>
+                  <h3 style={{ marginTop: 0 }}>{ui.step2Title}</h3>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                    <input value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="companyId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
-                    <input value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="reportGroupId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
-                    <input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="period, e.g. 2026-Q1" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
-                    <input value={reportSlot} onChange={(e) => setReportSlot(e.target.value)} placeholder="reportSlot, e.g. 1" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                    <Field label={ui.labels.companyId} hint={ui.examples.companyId} value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="e.g. 2" style={{ marginBottom: 0 }} />
+                    <Field label={ui.labels.reportGroupId} hint={ui.examples.reportGroupId} value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="e.g. 1" style={{ marginBottom: 0 }} />
+                    <Field label={ui.labels.period} hint={ui.examples.period} value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="e.g. 2026-Q1" style={{ marginBottom: 0 }} />
+                    <Field label={ui.labels.reportSlot} hint={ui.examples.reportSlot} value={reportSlot} onChange={(e) => setReportSlot(e.target.value)} placeholder="e.g. 1" style={{ marginBottom: 0 }} />
                   </div>
-                  <input value={ipfsCID} onChange={(e) => setIpfsCID(e.target.value)} placeholder={submitMode === "burner" ? "ipfsCID (burner mode auto-fills after IPFS upload)" : "ipfsCID"} style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
-                  <div style={{ height: 8 }} />
-                  <textarea value={reportPlaintext} onChange={(e) => setReportPlaintext(e.target.value)} placeholder="??批捆 / report content" style={{ width: "100%", height: 96, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                  <Field label={ui.labels.ipfsCID} hint={ui.examples.ipfsCID} value={ipfsCID} onChange={(e) => setIpfsCID(e.target.value)} placeholder={submitMode === "burner" ? (lang === "zh" ? "burner 模式會自動回填" : "auto-filled in burner mode") : "e.g. bafy..."} />
+                  <TextAreaField label={ui.labels.reportPlaintext} hint={ui.examples.reportPlaintext} value={reportPlaintext} onChange={(e) => setReportPlaintext(e.target.value)} placeholder={lang === "zh" ? "例如：請描述事件時間、地點、人物與佐證" : "e.g. describe time, location, people involved, and evidence"} height={110} />
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-                    <Btn label="Preload proof artifacts" k="preloadProof" onClick={preloadProofArtifacts} disabled={!canRead} />
-                    <Btn label="Prepare anonymous credential" k="prepareCredential" onClick={prepareAnonymousCredential} primary disabled={!canRead} />
-                    <Btn label="Encrypt + upload report" k="genProof" onClick={generateProofAndEncrypt} disabled={!canRead} />
+                    <Btn label={t.preloadProof} k="preloadProof" onClick={preloadProofArtifacts} disabled={!canRead} />
+                    <Btn label={t.prepareCredential} k="prepareCredential" onClick={prepareAnonymousCredential} primary disabled={!canRead} />
+                    <Btn label={t.genProof} k="genProof" onClick={generateProofAndEncrypt} disabled={!canRead} />
                   </div>
-                  <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>proof artifacts: {proofArtifactsStatus}</div>
-                  <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>prepared credential: {preparedCredentialContext || "-"}</div>
-                  <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>messageHash: {messageHash || "-"}</div>
+                  <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>{ui.proofArtifacts}: {proofArtifactsStatus}</div>
+                  <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>{ui.preparedCredential}: {preparedCredentialContext || "-"}</div>
+                  <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>{ui.messageHash}: {messageHash || "-"}</div>
                   <div style={{ marginTop: 8, border: "1px solid #facc15", background: "#fffbeb", borderRadius: 10, padding: 10, overflowWrap: "anywhere" }}>
-                    <strong>Save this thread secret key:</strong>
-                    <div style={{ marginTop: 4, fontFamily: "ui-monospace,monospace" }}>{threadSecretKey || "(generated after Encrypt + upload report)"}</div>
-                    <div style={{ marginTop: 4, color: "#92400e", fontSize: 13 }}>One report uses one symmetric key. Keep it private; it is required to read Admin replies and send anonymous follow-ups.</div>
+                    <strong>{ui.threadKeyTitle}</strong>
+                    <div style={{ marginTop: 4, fontFamily: "ui-monospace,monospace" }}>{threadSecretKey || `(${ui.generatedAfterEncrypt})`}</div>
+                    <div style={{ marginTop: 4, color: "#92400e", fontSize: 13 }}>{ui.threadKeyHint}</div>
                   </div>
-                  <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>proof scope: {proofScope || "-"}</div>
-                  <textarea value={encryptedReport} onChange={(e) => setEncryptedReport(e.target.value)} placeholder="hybrid encrypted report payload (JSON)" style={{ width: "100%", height: 80, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
-                  <textarea value={proofJson} onChange={(e) => setProofJson(e.target.value)} placeholder="proof json" style={{ width: "100%", height: 160, marginTop: 8, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
+                  <div style={{ marginTop: 4, overflowWrap: "anywhere" }}>{ui.proofScope}: {proofScope || "-"}</div>
+                  <TextAreaField label={ui.labels.encryptedPayload} hint={ui.examples.encryptedPayload} value={encryptedReport} onChange={(e) => setEncryptedReport(e.target.value)} placeholder="e.g. { cipher, encryptedKey, ... }" height={80} mono style={{ marginTop: 10 }} />
+                  <TextAreaField label={ui.labels.proofJson} hint={ui.examples.proofJson} value={proofJson} onChange={(e) => setProofJson(e.target.value)} placeholder="e.g. { merkleTreeRoot, nullifier, proof, ... }" height={160} mono />
                 </div>
 
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
-                  <h3 style={{ marginTop: 0 }}>Step 3: Submit + View</h3>
+                  <h3 style={{ marginTop: 0 }}>{ui.step3Title}</h3>
                   <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginBottom: 10, background: "#f8fafc" }}>
                     <div style={{ fontWeight: 700, marginBottom: 8 }}>{t.submitMode}</div>
                     <label style={{ display: "block", marginBottom: 6 }}>
@@ -1226,21 +1474,17 @@ function App() {
                     </label>
                     {submitMode === "burner" ? (
                       <>
-                        <input
-                          value={burnerRpcUrl}
-                          onChange={(e) => setBurnerRpcUrl(e.target.value)}
-                          placeholder="Zero-gas RPC URL, e.g. http://127.0.0.1:8545"
-                          style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }}
-                        />
+                        <Field label={ui.labels.burnerRpc} hint={ui.examples.burnerRpc} value={burnerRpcUrl} onChange={(e) => setBurnerRpcUrl(e.target.value)} placeholder="e.g. http://127.0.0.1:8545" />
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 8 }}>
-                          <input value={ipfsClusterApi} onChange={(e) => setIpfsClusterApi(e.target.value)} placeholder="IPFS Cluster API, e.g. http://127.0.0.1:9094" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
-                          <input value={ipfsClusterUser} onChange={(e) => setIpfsClusterUser(e.target.value)} placeholder="user" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
-                          <input value={ipfsClusterPassword} onChange={(e) => setIpfsClusterPassword(e.target.value)} placeholder="password from private-ipfs-cluster/.env" type="password" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                          <Field label={ui.labels.ipfsClusterApi} hint={ui.examples.ipfsClusterApi} value={ipfsClusterApi} onChange={(e) => setIpfsClusterApi(e.target.value)} placeholder="e.g. http://127.0.0.1:9094" style={{ marginBottom: 0 }} />
+                          <Field label={ui.labels.ipfsUser} hint={ui.examples.ipfsUser} value={ipfsClusterUser} onChange={(e) => setIpfsClusterUser(e.target.value)} placeholder="e.g. admin" style={{ marginBottom: 0 }} />
+                          <Field label={ui.labels.ipfsPassword} hint={ui.examples.ipfsPassword} value={ipfsClusterPassword} onChange={(e) => setIpfsClusterPassword(e.target.value)} placeholder="e.g. changeme" type="password" style={{ marginBottom: 0 }} />
                         </div>
                         <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
-                          Burner wallet ??汗?冽璈????芾?鞎祇?gasPrice=0 鈭斗?嚗??梯??潔???ZK proof 瘙箏??迨璅∪???砍?祇??銝西???喳?? Private IPFS?moy 隞? POL嚗??拍 burner ??gas??                        </div>
+                          {ui.burnerHint}
+                        </div>
                         <div style={{ marginTop: 6, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", overflowWrap: "anywhere" }}>
-                          last burner: {lastBurnerAddress || "-"}
+                          {ui.lastBurner}: {lastBurnerAddress || "-"}
                         </div>
                       </>
                     ) : null}
@@ -1259,19 +1503,19 @@ function App() {
                       <div>nullifier: {r.nullifier}</div>
                       <div>scope: {r.scope}</div>
                       <div>sender: {r.submittedBy}</div>
-                      <div>encrypted: {r.encryptedReport ? `${r.encryptedReport.slice(0, 80)}...` : "(stored in private IPFS)"}</div>
-                      <div>plain: {r.plainText || "(no key / not decrypted)"}</div>
+                      <div>{ui.encrypted}: {r.encryptedReport ? `${r.encryptedReport.slice(0, 80)}...` : `(${ui.storedInIpfs})`}</div>
+                      <div>{ui.plain}: {r.plainText || `(${ui.noKeyNotDecrypted})`}</div>
                     </div>
-                  )) : <div style={{ marginTop: 8 }}>no reports</div>}
+                  )) : <div style={{ marginTop: 8 }}>{ui.noReports}</div>}
                   <div style={{ marginTop: 12, borderTop: "1px solid #e5e7eb", paddingTop: 12 }}>
-                    <h3 style={{ margin: "0 0 8px" }}>Anonymous Thread Reply</h3>
-                    <input value={threadReportId} onChange={(e) => setThreadReportId(e.target.value)} placeholder="reportId" style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", marginBottom: 8 }} />
-                    <textarea value={threadSecretKey} onChange={(e) => setThreadSecretKey(e.target.value)} placeholder="thread private key / symmetric key saved from initial report" style={{ width: "100%", height: 76, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box", fontFamily: "ui-monospace,monospace", marginBottom: 8 }} />
+                    <h3 style={{ margin: "0 0 8px" }}>{ui.anonymousThreadTitle}</h3>
+                    <Field label={ui.labels.threadReportId} hint={ui.examples.threadReportId} value={threadReportId} onChange={(e) => setThreadReportId(e.target.value)} placeholder="e.g. 1" />
+                    <TextAreaField label={ui.labels.threadSecretKey} hint={ui.examples.threadSecretKey} value={threadSecretKey} onChange={(e) => setThreadSecretKey(e.target.value)} placeholder="e.g. JwkZp..." height={76} mono />
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                       <Btn label={t.loadThread} k="employeeLoadThread" onClick={() => loadReportMessages(threadReportId.trim())} disabled={!canRead} />
-                      <Btn label="Decrypt Replies" k="employeeDecryptThread" onClick={() => decryptThreadMessages(threadReportId.trim(), threadSecretKey.trim())} disabled={!canRead} />
+                      <Btn label={t.decryptThread} k="employeeDecryptThread" onClick={() => decryptThreadMessages(threadReportId.trim(), threadSecretKey.trim())} disabled={!canRead} />
                     </div>
-                    <textarea value={reporterReplyText} onChange={(e) => setReporterReplyText(e.target.value)} placeholder="Reporter follow-up / rebuttal. It will be encrypted with the saved thread key and submitted by burner wallet." style={{ width: "100%", height: 84, border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", boxSizing: "border-box" }} />
+                    <TextAreaField label={ui.labels.reporterReply} hint={ui.examples.reporterReply} value={reporterReplyText} onChange={(e) => setReporterReplyText(e.target.value)} placeholder={lang === "zh" ? "例如：補充事件時間或回覆 Admin 問題" : "e.g. add incident time or answer Admin questions"} height={84} />
                     <div style={{ marginTop: 8 }}><Btn label={t.sendReply} k="reporterReply" onClick={reporterSendReply} primary disabled={!CONTRACT_ADDRESS} /></div>
                     {(threadMessages[threadReportId.trim()] || []).length > 0 ? (
                       <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
@@ -1280,7 +1524,7 @@ function App() {
                             <div>message #{m.id} | {m.senderRole === 1 ? "Admin" : "Reporter"} | {new Date(m.timestamp * 1000).toLocaleString()}</div>
                             <div>cid: {m.ipfsCID}</div>
                             <div>hash: {m.contentHash}</div>
-                            <div style={{ whiteSpace: "pre-wrap" }}>plain: {m.plainText || "(encrypted)"}</div>
+                            <div style={{ whiteSpace: "pre-wrap" }}>{ui.plain}: {m.plainText || `(${ui.encryptedOnly})`}</div>
                           </div>
                         ))}
                       </div>
