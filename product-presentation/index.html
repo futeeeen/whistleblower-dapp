@@ -1,0 +1,190 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>匿名舉報平台 | Interactive Product Brief</title>
+  <meta name="description" content="以 ZK proof、Private IPFS、hybrid encryption 與聯盟鏈打造的匿名舉報平台互動式產品介紹。" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+
+  <header class="topbar" aria-label="Main navigation">
+    <a class="brand" href="#hero" aria-label="回到首頁">
+      <span class="brand-mark">A</span>
+      <span>
+        <strong>AnonTrust</strong>
+        <small>Anonymous Reporting Platform</small>
+      </span>
+    </a>
+    <nav class="nav-links">
+      <a href="#problem">痛點</a>
+      <a href="#journey">流程</a>
+      <a href="#architecture">架構</a>
+      <a href="#trust">信任設計</a>
+      <a href="#demo">互動 Demo</a>
+    </nav>
+    <button class="ghost-button" id="focusModeBtn" type="button">簡報模式</button>
+  </header>
+
+  <main>
+    <section class="hero section" id="hero" data-section>
+      <div class="hero-copy reveal">
+        <p class="eyebrow">Consortium-chain ready whistleblowing</p>
+        <h1>讓員工敢說，讓公司可信地處理。</h1>
+        <p class="lead">一個面向企業與第三方機構的匿名舉報平台：員工用 Zero-Knowledge Proof 證明自己有資格，但不暴露身分；舉報內容加密存入 Private IPFS；鏈上留下不可竄改的處理軌跡。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="#demo">開始互動導覽</a>
+          <a class="secondary-button" href="#architecture">看產品架構</a>
+        </div>
+        <div class="metric-strip" aria-label="產品核心指標">
+          <div><strong>0</strong><span>員工 Gas fee</span></div>
+          <div><strong>ZK</strong><span>資格驗證不揭露身份</span></div>
+          <div><strong>IPFS</strong><span>密文內容私有保存</span></div>
+        </div>
+      </div>
+      <div class="hero-card reveal delay-1" aria-label="產品流程摘要卡片">
+        <div class="glass-card status-card">
+          <div class="card-topline">
+            <span class="live-dot"></span>
+            <span>Case #0248 verified</span>
+          </div>
+          <div class="case-body">
+            <div class="shield-orbit">
+              <span class="shield">◇</span>
+              <span class="orbit orbit-a"></span>
+              <span class="orbit orbit-b"></span>
+            </div>
+            <h2>已確認：有效員工匿名提交</h2>
+            <p>Proof verified. Reporter identity not revealed.</p>
+          </div>
+          <div class="signal-list">
+            <span>encrypted payload</span>
+            <span>content hash</span>
+            <span>nullifier</span>
+            <span>audit trail</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section problem-grid" id="problem" data-section>
+      <div class="section-heading reveal">
+        <p class="eyebrow">Why it matters</p>
+        <h2>傳統舉報流程，常常卡在「不敢講」與「不能信」。</h2>
+      </div>
+      <article class="pain-card reveal delay-1">
+        <span>01</span>
+        <h3>員工怕被識別</h3>
+        <p>即使公司說匿名，登入紀錄、信箱、表單權限仍可能讓員工擔心被追溯。</p>
+      </article>
+      <article class="pain-card reveal delay-2">
+        <span>02</span>
+        <h3>公司怕濫用</h3>
+        <p>完全開放的匿名通道容易被非員工或惡意訊息干擾，調查成本失控。</p>
+      </article>
+      <article class="pain-card reveal delay-3">
+        <span>03</span>
+        <h3>紀錄難以被信任</h3>
+        <p>誰看過、何時更新、內容是否被改過，若沒有可稽核軌跡，很難建立公信力。</p>
+      </article>
+    </section>
+
+    <section class="section journey" id="journey" data-section>
+      <div class="section-heading reveal">
+        <p class="eyebrow">Product journey</p>
+        <h2>一個案件從提交到追問，都維持匿名與可稽核。</h2>
+      </div>
+      <div class="journey-tabs reveal delay-1" role="tablist" aria-label="角色流程切換">
+        <button class="tab-button active" data-journey="employee" type="button">員工視角</button>
+        <button class="tab-button" data-journey="admin" type="button">公司 Admin</button>
+        <button class="tab-button" data-journey="platform" type="button">平台 / 聯盟鏈</button>
+      </div>
+      <div class="journey-stage reveal delay-2">
+        <div class="journey-copy" id="journeyCopy"></div>
+        <div class="journey-visual" id="journeyVisual"></div>
+      </div>
+    </section>
+
+    <section class="section architecture" id="architecture" data-section>
+      <div class="section-heading reveal">
+        <p class="eyebrow">Architecture</p>
+        <h2>鏈上保存證據，鏈下保存密文，身份只用來證明資格。</h2>
+      </div>
+      <div class="flow-board reveal delay-1" aria-label="系統架構流程">
+        <button class="flow-node active" data-flow="zk" type="button">
+          <strong>01 ZK Proof</strong>
+          <span>證明是員工，不說是哪位</span>
+        </button>
+        <button class="flow-node" data-flow="encrypt" type="button">
+          <strong>02 Hybrid Encryption</strong>
+          <span>內容用 thread key，加密 key 給公司</span>
+        </button>
+        <button class="flow-node" data-flow="ipfs" type="button">
+          <strong>03 Private IPFS</strong>
+          <span>密文離鏈保存，CID 可追溯</span>
+        </button>
+        <button class="flow-node" data-flow="chain" type="button">
+          <strong>04 Permissioned Chain</strong>
+          <span>驗 proof、存 metadata、免員工 Gas</span>
+        </button>
+      </div>
+      <div class="flow-detail reveal delay-2" id="flowDetail"></div>
+    </section>
+
+    <section class="section trust" id="trust" data-section>
+      <div class="section-heading reveal">
+        <p class="eyebrow">Trust design</p>
+        <h2>我們不是只說「相信我」，而是把信任拆成可驗證的機制。</h2>
+      </div>
+      <div class="trust-layout">
+        <div class="trust-panel reveal delay-1">
+          <h3>舉報者不被看見</h3>
+          <button class="trust-row active" data-trust="identity" type="button"><span>身份</span><strong>ZK membership proof</strong></button>
+          <button class="trust-row" data-trust="repeat" type="button"><span>防重複</span><strong>nullifier + quota scope</strong></button>
+          <button class="trust-row" data-trust="content" type="button"><span>內容</span><strong>AES-GCM + Admin public key</strong></button>
+          <button class="trust-row" data-trust="dialogue" type="button"><span>追問</span><strong>anonymous encrypted thread</strong></button>
+        </div>
+        <div class="trust-detail reveal delay-2" id="trustDetail"></div>
+      </div>
+    </section>
+
+    <section class="section demo" id="demo" data-section>
+      <div class="section-heading reveal">
+        <p class="eyebrow">Interactive demo</p>
+        <h2>點選一個情境，看看平台如何讓雙方都安心。</h2>
+      </div>
+      <div class="scenario-shell reveal delay-1">
+        <aside class="scenario-list" aria-label="Demo scenarios">
+          <button class="scenario-button active" data-scenario="fraud" type="button">財務舞弊</button>
+          <button class="scenario-button" data-scenario="harassment" type="button">職場騷擾</button>
+          <button class="scenario-button" data-scenario="security" type="button">資安事件</button>
+        </aside>
+        <div class="scenario-card" id="scenarioCard"></div>
+      </div>
+    </section>
+
+    <section class="section closing" data-section>
+      <div class="closing-card reveal">
+        <p class="eyebrow">What we are building</p>
+        <h2>一個能讓企業處理問題，也能讓員工保有安全感的基礎設施。</h2>
+        <p>它不是單純表單，而是匿名身份、加密證據、私有儲存、聯盟鏈稽核與雙向溝通的組合。當制度開始保護說真話的人，組織才有機會更早修正問題。</p>
+        <a class="primary-button" href="#hero">回到開場</a>
+      </div>
+    </section>
+  </main>
+
+  <div class="slide-rail" aria-label="Sections progress">
+    <button data-target="hero" class="active" type="button"><span>01</span></button>
+    <button data-target="problem" type="button"><span>02</span></button>
+    <button data-target="journey" type="button"><span>03</span></button>
+    <button data-target="architecture" type="button"><span>04</span></button>
+    <button data-target="trust" type="button"><span>05</span></button>
+    <button data-target="demo" type="button"><span>06</span></button>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
