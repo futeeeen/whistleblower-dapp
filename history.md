@@ -1,10 +1,16 @@
 # 專案 Push 修改紀錄
 
+## 2026.05.15_11:26:17
+* 為 product-presentation 首頁驗證卡片新增綠色認證勾勾動畫，讓使用者能直覺感受 proof verified / 認證成功。
+* 將原本菱形狀態圖示改為 SVG 方框與勾勾，搭配 stroke-dasharray 做出循環描線效果。
+* 保留原本光暈與 orbit 視覺風格，並確認靜態頁可以透過本機 HTTP server 正常載入。
+
 ## 2026.05.13_21:23:53
 * 調整前端欄位標示，讓 SaaS Admin、Admin、Employee 各頁面的輸入框都有清楚 label、填寫範例與用途說明。
 * 將畫面文字、欄位說明、toast 標題、按鈕 loading 狀態等補齊中英文切換，並修復部分亂碼 placeholder / 錯誤訊息。
 * 依產品角色分工調整頁面：SaaS Admin 只負責建立公司，舉報主題改由各公司 Admin 在自己的 companyId 下建立。
 * 驗證前端 production build 通過，並用本機瀏覽器確認 SaaS Admin 不再顯示建立舉報主題、Admin tab 可建立舉報主題。
+
 ## 2026.05.13_19:11:12
 * 修復 ZK proof generation E2E 測試長時間卡住的問題。
 * 找到根因：proof child 實際已完成 proving，但未明確結束 process，導致 parent 等到 timeout。
