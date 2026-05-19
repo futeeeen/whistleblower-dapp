@@ -1,5 +1,16 @@
 # 專案 Push 修改紀錄
 
+## 2026.05.19_16:04:59
+* 修正 Employee 前端輸入框每打一個字就失焦的問題，將 Field / TextAreaField 移出 App component，避免 React 重新掛載輸入元件。
+* Employee tab 新增依公司 ID 查詢舉報主題功能，可查看 Report Group ID、主題名稱、每人可舉報次數、目前鏈上舉報數量與 Semaphore group ID。
+* 優化 Admin 舉報案件查詢，可查公司主題、指定主題舉報、本公司舉報與全部舉報，並顯示目前列表筆數。
+* 將 Employee burner 模式的 RPC / IPFS Cluster 連線資訊改為系統環境設定摘要，舉報者預設不需手動填寫，進階設定才可展開調整。
+* 將 Admin 公鑰加密改為 browser-safe 的 tweetnacl 實作，維持 MetaMask eth_decrypt 相容格式，避開 eth-sig-util bundle 造成的 Class extends undefined 錯誤。
+* 調整舉報送出流程：Step 2 只做本機加密與準備 payload；burner 送出時先做鏈上 callStatic 預檢，通過後才上傳 Private IPFS 並送鏈上交易，避免 quota / nullifier 失敗仍產生 IPFS 密文。
+* 送出成功後在 Step 3 顯示最近案件的 Report ID、IPFS CID 與 thread secret key，並提供複製與帶入對話欄功能。
+* 修正 Admin 解密與回覆流程：解密時自動連接 Admin 錢包；Admin 回覆固定使用 Admin MetaMask signer，Reporter 補充才使用 burner wallet，避免 Only company admin 導致 gas estimate 失敗。
+* 更新 frontend .env.example，補上 VITE_IPFS_CLUSTER_API / USER / PASSWORD 設定；新增 tweetnacl 依賴並完成 npm run build 驗證。
+
 ## 2026.05.15_11:26:17
 * 為 product-presentation 首頁驗證卡片新增綠色認證勾勾動畫，讓使用者能直覺感受 proof verified / 認證成功。
 * 將原本菱形狀態圖示改為 SVG 方框與勾勾，搭配 stroke-dasharray 做出循環描線效果。

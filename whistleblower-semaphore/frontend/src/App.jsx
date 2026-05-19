@@ -9,14 +9,59 @@ import appArtifact from "./EmployeeSemaphoreWhistleblower.json";
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "";
 const LOCAL_CHAIN_HEX = "0x7a69";
 const LOCAL_RPC_URL = "http://127.0.0.1:8545";
+const DEFAULT_IPFS_CLUSTER_API = import.meta.env.VITE_IPFS_CLUSTER_API || "http://127.0.0.1:9094";
+const DEFAULT_IPFS_CLUSTER_USER = import.meta.env.VITE_IPFS_CLUSTER_USER || "admin";
+const DEFAULT_IPFS_CLUSTER_PASSWORD = import.meta.env.VITE_IPFS_CLUSTER_PASSWORD || "";
 const AMOY_CHAIN_HEX = "0x13882";
 const AMOY_RPC_URL = "https://rpc-amoy.polygon.technology";
 const REPORT_CREDENTIAL_MESSAGE_TAG = "REPORT_CREDENTIAL_V1";
+
+const inputStyle = {
+  width: "100%",
+  border: "1px solid #d1d5db",
+  borderRadius: 8,
+  padding: "9px 10px",
+  boxSizing: "border-box"
+};
+const monoStyle = { fontFamily: "ui-monospace,monospace" };
+
+const HelpText = ({ children }) => (
+  <div style={{ marginTop: 5, fontSize: 12.5, color: "#64748b", lineHeight: 1.45 }}>{children}</div>
+);
+
+const Field = ({ label, hint, value, onChange, placeholder, type = "text", style = {}, inputProps = {} }) => (
+  <label style={{ display: "block", marginBottom: 10, ...style }}>
+    <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{label}</div>
+    <input
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      type={type}
+      style={inputStyle}
+      {...inputProps}
+    />
+    {hint ? <HelpText>{hint}</HelpText> : null}
+  </label>
+);
+
+const TextAreaField = ({ label, hint, value, onChange, placeholder, height = 88, mono = false, style = {} }) => (
+  <label style={{ display: "block", marginBottom: 10, ...style }}>
+    <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{label}</div>
+    <textarea
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      style={{ ...inputStyle, height, ...(mono ? monoStyle : {}) }}
+    />
+    {hint ? <HelpText>{hint}</HelpText> : null}
+  </label>
+);
 
 function App() {
   const [activeTab, setActiveTab] = useState("admin");
   const [showPanel, setShowPanel] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
+  const [showAdvancedSubmitSettings, setShowAdvancedSubmitSettings] = useState(false);
   const [lang, setLang] = useState("zh");
   const [loading, setLoading] = useState({});
   const [toasts, setToasts] = useState([]);
@@ -28,6 +73,7 @@ function App() {
   const [newMemberCommitment, setNewMemberCommitment] = useState("");
   const [removeMemberCommitment, setRemoveMemberCommitment] = useState("");
   const [members, setMembers] = useState([]);
+  const [membersReportGroupId, setMembersReportGroupId] = useState("");
   const [groupId, setGroupId] = useState("");
   const [companyId, setCompanyId] = useState("1");
   const [companyName, setCompanyName] = useState("");
@@ -51,19 +97,21 @@ function App() {
   const [messageHash, setMessageHash] = useState("");
   const [encryptedReport, setEncryptedReport] = useState("");
   const [proofJson, setProofJson] = useState("");
-  const [submitMode, setSubmitMode] = useState("metamask");
+  const [submitMode, setSubmitMode] = useState("burner");
   const [burnerRpcUrl, setBurnerRpcUrl] = useState(LOCAL_RPC_URL);
   const [lastBurnerAddress, setLastBurnerAddress] = useState("");
-  const [ipfsClusterApi, setIpfsClusterApi] = useState("http://127.0.0.1:9094");
-  const [ipfsClusterUser, setIpfsClusterUser] = useState("admin");
-  const [ipfsClusterPassword, setIpfsClusterPassword] = useState("");
+  const [ipfsClusterApi, setIpfsClusterApi] = useState(DEFAULT_IPFS_CLUSTER_API);
+  const [ipfsClusterUser, setIpfsClusterUser] = useState(DEFAULT_IPFS_CLUSTER_USER);
+  const [ipfsClusterPassword, setIpfsClusterPassword] = useState(DEFAULT_IPFS_CLUSTER_PASSWORD);
 
   const [adminEncryptionPubKey, setAdminEncryptionPubKey] = useState("");
   const [ipfsGateway, setIpfsGateway] = useState("http://127.0.0.1:8080");
   const [reports, setReports] = useState([]);
+  const [companyReportGroups, setCompanyReportGroups] = useState([]);
   const [reportStatusDrafts, setReportStatusDrafts] = useState({});
   const [threadSecretKey, setThreadSecretKey] = useState("");
   const [threadReportId, setThreadReportId] = useState("");
+  const [lastSubmittedThread, setLastSubmittedThread] = useState(null);
   const [threadMessages, setThreadMessages] = useState({});
   const [adminReplyDrafts, setAdminReplyDrafts] = useState({});
   const [reporterReplyText, setReporterReplyText] = useState("");
@@ -159,13 +207,17 @@ function App() {
       previewReporter: "預覽 Reporter Commitment",
       getAdminPub: "取得 Admin 加密公鑰",
       setAdminPub: "設定公司 Admin 公鑰",
-      genProof: "加密並上傳舉報",
+      genProof: "加密並準備舉報",
       submit: "送出匿名舉報",
       submitMode: "送出方式",
       metamaskMode: "使用 MetaMask 錢包",
       burnerMode: "使用匿名 burner wallet",
+      advancedSettings: "進階設定",
+      hideAdvancedSettings: "隱藏進階設定",
       loadReports: "查詢所有鏈上舉報",
       loadCompanyReports: "查詢本公司舉報",
+      loadCompanyGroups: "查詢公司舉報主題",
+      loadGroupReports: "查詢指定主題舉報",
       updateStatus: "更新狀態",
       decrypt: "解密",
       decryptAll: "全部解密",
@@ -198,13 +250,17 @@ function App() {
       previewReporter: "Preview Reporter Commitment",
       getAdminPub: "Get Admin Encryption PubKey",
       setAdminPub: "Set Company Admin PubKey",
-      genProof: "Encrypt + Upload Report",
+      genProof: "Encrypt + Prepare Report",
       submit: "Submit Anonymous Report",
       submitMode: "Submit Mode",
       metamaskMode: "Use MetaMask wallet",
       burnerMode: "Use anonymous burner wallet",
+      advancedSettings: "Advanced Settings",
+      hideAdvancedSettings: "Hide Advanced Settings",
       loadReports: "Load All Reports",
       loadCompanyReports: "Load Company Reports",
+      loadCompanyGroups: "Load Company Report Groups",
+      loadGroupReports: "Load Group Reports",
       updateStatus: "Update Status",
       decrypt: "Decrypt",
       decryptAll: "Decrypt All",
@@ -226,6 +282,8 @@ function App() {
       membershipTitle: "Admin：員工群組管理",
       encryptionTitle: "Admin 加密公鑰",
       reportsTitle: "舉報案件",
+      companyGroupsTitle: "依公司查詢舉報主題",
+      companyGroupsIntro: "輸入公司 ID 後可查看該公司有哪些舉報主題、對應 Report Group ID、每人可舉報次數與目前鏈上舉報數量。",
       step1Title: "步驟 1：員工匿名身份",
       step2Title: "步驟 2：Proof 與加密舉報",
       step3Title: "步驟 3：送出與查看",
@@ -255,6 +313,12 @@ function App() {
       memberPrivacyHint: "移除 commitment 會讓離職員工無法再用目前群組資格提交。公司可以知道 commitment 對應哪位員工，但舉報 proof 本身不會揭露是哪個 commitment 送出。",
       companyKeyHint: "這會把公鑰寫入 companies[companyId].adminPublicKey。只有平台 owner 或該公司的 admin address 可以更新。",
       burnerHint: "Burner wallet 是前端臨時產生的匿名交易錢包，適合本機或未來 gasPrice=0 的許可鏈。Amoy 是公測網，仍需要 POL 支付 gas。",
+      systemSubmitSettings: "系統送出設定",
+      systemSubmitHint: "一般舉報者不需要填寫這些欄位。前端會使用控制面板與環境設定中的 RPC / Private IPFS 連線資訊自動送出。",
+      systemConfigMissing: "系統尚未設定 IPFS Cluster 密碼。請由開發者在 frontend/.env 設定 VITE_IPFS_CLUSTER_PASSWORD，並重新啟動前端。",
+      systemConfigReady: "系統設定已就緒，舉報者只需要按「送出匿名舉報」。",
+      latestThreadKeyTitle: "最近送出案件的 thread secret key",
+      latestThreadKeyHint: "請把這組 key 私下保存。之後輸入 reportId + thread secret key，才能查看 Admin 回覆並匿名補充說明。",
       labels: {
         companyId: "公司 ID",
         newCompanyName: "新公司名稱",
@@ -324,6 +388,8 @@ function App() {
       membershipTitle: "Admin: Employee Membership",
       encryptionTitle: "Admin Encryption Key",
       reportsTitle: "Reports",
+      companyGroupsTitle: "Find Report Groups by Company",
+      companyGroupsIntro: "Enter a company ID to see available report topics, their Report Group IDs, max reports per member, and current on-chain report counts.",
       step1Title: "Step 1: Anonymous Employee Identity",
       step2Title: "Step 2: Proof + Encrypted Report",
       step3Title: "Step 3: Submit + View",
@@ -353,6 +419,12 @@ function App() {
       memberPrivacyHint: "Removing a commitment prevents future credentials from the current member tree. Company HR may know which employee owns a commitment, but submitted reports remain unlinkable to a specific commitment through the proof alone.",
       companyKeyHint: "This writes the public key to companies[companyId].adminPublicKey. Only the platform owner or that company's admin address can update it.",
       burnerHint: "Burner wallet is a temporary anonymous transaction wallet created by the frontend. It is intended for local or future permissioned chains with gasPrice=0. Amoy is a public testnet and still requires POL.",
+      systemSubmitSettings: "System Submit Settings",
+      systemSubmitHint: "Reporters do not need to fill these fields. The frontend uses the control panel and environment settings for RPC / Private IPFS submission.",
+      systemConfigMissing: "IPFS Cluster password is not configured. A developer should set VITE_IPFS_CLUSTER_PASSWORD in frontend/.env and restart the frontend.",
+      systemConfigReady: "System settings are ready. The reporter only needs to click Submit Anonymous Report.",
+      latestThreadKeyTitle: "Latest submitted report thread secret key",
+      latestThreadKeyHint: "Save this key privately. Later, enter reportId + thread secret key to read Admin replies and send anonymous follow-ups.",
       labels: {
         companyId: "Company ID",
         newCompanyName: "New company name",
@@ -453,9 +525,9 @@ function App() {
     return labels[Number(status)] || (lang === "zh" ? "未知" : "Unknown");
   }
 
-  function getProofDepth() {
-    if (!members.length) return 1;
-    const group = new Group(members);
+  function getProofDepth(memberList = members) {
+    if (!memberList.length) return 1;
+    const group = new Group(memberList);
     return group.depth || 1;
   }
 
@@ -477,8 +549,8 @@ function App() {
     ).toString();
   }
 
-  async function preloadProofArtifacts() {
-    const depth = getProofDepth();
+  async function preloadProofArtifacts(depthOverride) {
+    const depth = depthOverride || getProofDepth();
     setProofArtifactsStatus(`loading depth=${depth}`);
     const { maybeGetSnarkArtifacts, Project } = await import("@zk-kit/artifacts");
     const artifacts = await maybeGetSnarkArtifacts(Project.SEMAPHORE, {
@@ -567,17 +639,40 @@ function App() {
   }
 
   async function encryptWithAdminPubKey(pubKey, plainText) {
-    const { encrypt } = await import("@metamask/eth-sig-util");
-    const enc = encrypt({ publicKey: pubKey, data: plainText, version: "x25519-xsalsa20-poly1305" });
+    const naclModule = await import("tweetnacl");
+    const nacl = naclModule.default || naclModule;
+    let pubKeyBytes;
+    try {
+      pubKeyBytes = base64ToBytes(pubKey.trim());
+    } catch {
+      throw new Error(lang === "zh" ? "Admin 加密公鑰格式錯誤，請重新取得並設定公司 Admin 公鑰。" : "Invalid Admin encryption public key. Please get and set the company Admin public key again.");
+    }
+    if (pubKeyBytes.length !== nacl.box.publicKeyLength) {
+      throw new Error(lang === "zh" ? "Admin 加密公鑰長度不正確，請重新取得並設定公司 Admin 公鑰。" : "Invalid Admin encryption public key length. Please get and set the company Admin public key again.");
+    }
+    const ephemeralKeyPair = nacl.box.keyPair();
+    const nonce = nacl.randomBytes(nacl.box.nonceLength);
+    const messageBytes = new TextEncoder().encode(plainText);
+    const encryptedMessage = nacl.box(messageBytes, nonce, pubKeyBytes, ephemeralKeyPair.secretKey);
+    const enc = {
+      version: "x25519-xsalsa20-poly1305",
+      nonce: bytesToBase64(nonce),
+      ephemPublicKey: bytesToBase64(ephemeralKeyPair.publicKey),
+      ciphertext: bytesToBase64(encryptedMessage)
+    };
     const hex = "0x" + Buffer.from(JSON.stringify(enc), "utf8").toString("hex");
     return hex;
   }
 
   async function uploadEncryptedReportToIpfs(encryptedPayload) {
     const api = ipfsClusterApi.trim().replace(/\/+$/, "");
-    if (!api) throw new Error("Please enter IPFS Cluster API URL");
+    if (!api) {
+      throw new Error(lang === "zh" ? "系統尚未設定 IPFS Cluster API，請通知開發者檢查環境設定。" : "IPFS Cluster API is not configured. Ask a developer to check environment settings.");
+    }
     if (!ipfsClusterUser.trim() || !ipfsClusterPassword.trim()) {
-      throw new Error("Please enter IPFS Cluster user/password from private-ipfs-cluster/.env");
+      throw new Error(lang === "zh"
+        ? "系統尚未設定 IPFS Cluster 使用者或密碼，請通知開發者在 frontend/.env 設定 VITE_IPFS_CLUSTER_USER / VITE_IPFS_CLUSTER_PASSWORD 並重新啟動前端。"
+        : "IPFS Cluster user/password is not configured. Ask a developer to set VITE_IPFS_CLUSTER_USER / VITE_IPFS_CLUSTER_PASSWORD in frontend/.env and restart the frontend.");
     }
 
     const form = new FormData();
@@ -606,6 +701,7 @@ function App() {
     setWallet(account || "");
     setStatus("Wallet connected");
     pushToast("success", "Wallet connected");
+    return account || "";
   }
 
   async function switchToLocal() {
@@ -710,7 +806,10 @@ function App() {
     }
     const list = current;
     setMembers(list);
+    setMembersReportGroupId(reportGroupId.trim() || "all");
     setStatus(`Loaded ${list.length} members for reportGroupId=${reportGroupId || "all"}`);
+    pushToast("success", lang === "zh" ? `已載入 ${list.length} 位群組成員` : `Loaded ${list.length} group members`);
+    return list;
   }
 
   async function adminGetEncryptionPubKey() {
@@ -759,6 +858,8 @@ function App() {
     if (!reportGroupId.trim()) throw new Error("Please enter reportGroupId");
     const tx = await getSignerContract().addEmployeeMember(reportGroupId.trim(), commitment);
     await tx.wait();
+    setMembers((prev) => (membersReportGroupId === reportGroupId.trim() && !prev.includes(commitment) ? [...prev, commitment] : prev));
+    setMembersReportGroupId(reportGroupId.trim());
     setStatus("Employee added");
     pushToast("success", "Employee added");
   }
@@ -776,6 +877,7 @@ function App() {
     const tx = await getSignerContract().removeEmployeeMember(reportGroupId.trim(), commitment, siblings);
     await tx.wait();
     setMembers((prev) => prev.filter((member) => member !== commitment));
+    setMembersReportGroupId(reportGroupId.trim());
     setStatus("Employee commitment removed");
     pushToast("success", "Employee removed");
   }
@@ -808,29 +910,64 @@ function App() {
     if (id) setReportGroupId(id);
     if (semaphoreId) setGroupId(semaphoreId);
     setMembers([]);
+    setMembersReportGroupId("");
     setStatus(`Report group created${id ? `: ${id}` : ""}`);
     pushToast("success", "Report group created");
   }
 
-  async function prepareAnonymousCredential() {
-    if (!reporterIdentityExport.trim()) throw new Error("Please enter reporter identity");
-    if (!members.length) throw new Error("Please load group members first");
-    if (!companyId.trim() || !reportGroupId.trim() || !period.trim() || !reportSlot.trim()) {
-      throw new Error("Please enter companyId, reportGroupId, period, and reportSlot");
+  async function ensureCurrentGroupMembers() {
+    const targetReportGroupId = reportGroupId.trim();
+    if (!targetReportGroupId) {
+      throw new Error(lang === "zh" ? "請先填寫舉報主題 ID / Report Group ID" : "Please enter reportGroupId first");
     }
 
+    if (members.length && membersReportGroupId === targetReportGroupId) {
+      return members;
+    }
+
+    setStatus(lang === "zh" ? `正在載入 reportGroupId=${targetReportGroupId} 的成員...` : `Loading members for reportGroupId=${targetReportGroupId}...`);
+    const loaded = await loadMembersFromEvents();
+    if (!loaded.length) {
+      throw new Error(lang === "zh"
+        ? `reportGroupId=${targetReportGroupId} 目前沒有任何員工 commitment。請先到 Admin 分頁把員工加入這個舉報主題，再產生匿名憑證。`
+        : `reportGroupId=${targetReportGroupId} has no employee commitments. Add an employee in the Admin tab before preparing a credential.`);
+    }
+    return loaded;
+  }
+
+  async function prepareAnonymousCredential() {
+    if (!reporterIdentityExport.trim()) {
+      throw new Error(lang === "zh"
+        ? "請先在步驟 1 產生或貼上 Reporter Identity，再產生匿名憑證。"
+        : "Please generate or paste a Reporter Identity in Step 1 before preparing a credential.");
+    }
+    if (!companyId.trim() || !reportGroupId.trim() || !period.trim() || !reportSlot.trim()) {
+      throw new Error(lang === "zh"
+        ? "請填寫公司 ID、舉報主題 ID、舉報期間與舉報次數 slot。"
+        : "Please enter companyId, reportGroupId, period, and reportSlot.");
+    }
+
+    const memberList = await ensureCurrentGroupMembers();
     const c = getReadContract();
     const rg = await c.reportGroups(reportGroupId.trim());
     const gid = rg.semaphoreGroupId.toString();
 
     const identity = Identity.import(reporterIdentityExport.trim());
-    setReporterCommitmentPreview(identity.commitment.toString());
+    const reporterCommitment = identity.commitment.toString();
+    setReporterCommitmentPreview(reporterCommitment);
 
-    const group = new Group(members);
+    if (!memberList.includes(reporterCommitment)) {
+      throw new Error(lang === "zh"
+        ? `目前 Reporter Identity 的 commitment 不在 reportGroupId=${reportGroupId.trim()} 的成員名單中。請確認 Admin 已把這組 commitment 加入該舉報主題，或改用已加入的 Identity。`
+        : `The current Reporter Identity commitment is not a member of reportGroupId=${reportGroupId.trim()}. Add this commitment in Admin or use an enrolled identity.`);
+    }
+
+    const group = new Group(memberList);
     const scope = buildCredentialScope();
     const message = buildCredentialMessage();
-    const artifacts = proofArtifacts || await preloadProofArtifacts();
-    const proof = await generateProof(identity, group, message, scope, getProofDepth(), artifacts);
+    const depth = getProofDepth(memberList);
+    const artifacts = proofArtifacts && proofArtifactsStatus === `ready depth=${depth}` ? proofArtifacts : await preloadProofArtifacts(depth);
+    const proof = await generateProof(identity, group, message, scope, depth, artifacts);
 
     const solidityProof = {
       merkleTreeDepth: proof.merkleTreeDepth,
@@ -845,24 +982,35 @@ function App() {
     setPreparedCredentialContext(credentialContext);
     setGroupId(gid);
     setProofScope(scope);
-    setStatus("Anonymous credential prepared");
-    pushToast("success", "Anonymous credential prepared");
+    setStatus(lang === "zh" ? "匿名憑證已產生，可以進行加密並上傳舉報。" : "Anonymous credential prepared. You can encrypt and upload the report now.");
+    pushToast("success", lang === "zh" ? "匿名憑證已產生" : "Anonymous credential prepared");
   }
 
   async function generateProofAndEncrypt() {
-    if (!reportPlaintext.trim()) throw new Error("Please enter report content");
+    if (!reportPlaintext.trim()) {
+      throw new Error(lang === "zh" ? "請先填寫舉報內容" : "Please enter report content");
+    }
     if (!proofJson.trim() || preparedCredentialContext !== credentialContext) {
-      throw new Error("Please prepare an anonymous credential for the current company/group/period/slot first");
+      setStatus(lang === "zh" ? "目前沒有可用匿名憑證，正在先幫你產生..." : "No valid anonymous credential yet. Preparing it first...");
+      await prepareAnonymousCredential();
     }
     if (submitMode !== "burner" && !ipfsCID.trim()) {
-      throw new Error("Please enter ipfsCID, or switch to burner wallet for automatic upload");
+      throw new Error(lang === "zh"
+        ? "請填寫 IPFS CID，或切換成 burner wallet 讓前端自動上傳。"
+        : "Please enter ipfsCID, or switch to burner wallet for automatic upload.");
     }
-    if (!companyId.trim() || !reportGroupId.trim()) throw new Error("Please enter companyId and reportGroupId");
+    if (!companyId.trim() || !reportGroupId.trim()) {
+      throw new Error(lang === "zh" ? "請填寫公司 ID 與舉報主題 ID" : "Please enter companyId and reportGroupId");
+    }
 
     const c = getReadContract();
     const company = await c.companies(companyId.trim());
     const adminPub = company.adminPublicKey || await c.adminEncryptionPublicKey();
-    if (!adminPub) throw new Error("Admin public key is not set");
+    if (!adminPub) {
+      throw new Error(lang === "zh"
+        ? "這間公司尚未設定 Admin 加密公鑰。請先到 Admin 分頁設定公司 Admin 公鑰。"
+        : "Admin public key is not set for this company. Set it in the Admin tab first.");
+    }
 
     const secretKey = generateThreadSecretKey();
     const encryptedKey = await encryptWithAdminPubKey(adminPub, secretKey);
@@ -875,35 +1023,41 @@ function App() {
     });
     setThreadSecretKey(secretKey);
     setEncryptedReport(encrypted);
-    let finalIpfsCID = ipfsCID.trim();
-
-    if (submitMode === "burner") {
-      finalIpfsCID = await uploadEncryptedReportToIpfs(encrypted);
-      setIpfsCID(finalIpfsCID);
-    }
-
     setMessageHash(contentHash);
-    setStatus("Report encrypted and payload prepared. Save the thread secret key before leaving this page.");
-    pushToast("success", "Report encrypted + uploaded");
+    setStatus(lang === "zh"
+      ? "舉報已在本機加密並準備完成。burner 模式會在送出前先做鏈上預檢，通過後才上傳 IPFS。"
+      : "Report encrypted locally and prepared. In burner mode, the app preflights the chain before uploading to IPFS.");
+    pushToast("success", lang === "zh" ? "舉報已加密並準備完成" : "Report encrypted + prepared");
+    return { encrypted, contentHash, secretKey };
   }
 
   async function submitAnonymousReport() {
-    if (!proofJson.trim()) throw new Error("Please prepare an anonymous credential first");
+    if (!proofJson.trim()) throw new Error(lang === "zh" ? "請先產生匿名憑證" : "Please prepare an anonymous credential first");
     if (preparedCredentialContext !== credentialContext) {
-      throw new Error("Anonymous credential does not match the current company/group/period/slot. Please regenerate it.");
+      throw new Error(lang === "zh" ? "匿名憑證與目前公司/主題/期間/slot 不一致，請重新產生。" : "Anonymous credential does not match the current company/group/period/slot. Please regenerate it.");
     }
-    if (!messageHash.trim()) throw new Error("Missing messageHash");
+    let effectiveEncryptedReport = encryptedReport.trim();
+    let effectiveMessageHash = messageHash.trim();
+    let effectiveThreadSecretKey = threadSecretKey;
+    if (!effectiveEncryptedReport || !effectiveMessageHash) {
+      const generated = await generateProofAndEncrypt();
+      effectiveEncryptedReport = generated.encrypted;
+      effectiveMessageHash = generated.contentHash;
+      effectiveThreadSecretKey = generated.secretKey;
+    }
+    if (!effectiveMessageHash) throw new Error(lang === "zh" ? "缺少訊息雜湊，請先加密並準備舉報。" : "Missing messageHash");
 
     const proof = JSON.parse(proofJson);
-    const request = {
+    const buildRequest = (cid) => ({
       companyId: companyId.trim(),
       reportGroupId: reportGroupId.trim(),
-      ipfsCID: ipfsCID.trim(),
-      contentHash: messageHash.trim(),
+      ipfsCID: cid,
+      contentHash: effectiveMessageHash,
       period: period.trim(),
       reportSlot: reportSlot.trim()
-    };
+    });
     let tx;
+    let submittedIpfsCID = ipfsCID.trim();
 
     if (submitMode === "burner") {
       const provider = getBurnerProvider();
@@ -914,26 +1068,53 @@ function App() {
       const burner = ethers.Wallet.createRandom().connect(provider);
       setLastBurnerAddress(burner.address);
       const c = new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, burner);
-      tx = await c.submitAnonymousReport(request, proof, { gasPrice: 0 });
+      const preflightRequest = buildRequest("preflight-cid");
+      try {
+        await c.callStatic.submitAnonymousReport(preflightRequest, proof, { gasPrice: 0 });
+      } catch (error) {
+        throw new Error(lang === "zh"
+          ? `鏈上預檢未通過，尚未上傳 IPFS。可能原因：舉報次數 slot 已用過、quota 超出、proof 已失效或公司/主題不相符。原始錯誤：${parseErr(error)}`
+          : `On-chain preflight failed before IPFS upload. Possible causes: used slot, quota exceeded, stale proof, or company/group mismatch. Raw error: ${parseErr(error)}`);
+      }
+      submittedIpfsCID = await uploadEncryptedReportToIpfs(effectiveEncryptedReport);
+      setIpfsCID(submittedIpfsCID);
+      tx = await c.submitAnonymousReport(buildRequest(submittedIpfsCID), proof, { gasPrice: 0 });
     } else {
+      if (!ipfsCID.trim()) {
+        throw new Error(lang === "zh" ? "MetaMask 模式請先填寫 IPFS CID" : "Please enter ipfsCID in MetaMask mode");
+      }
+      submittedIpfsCID = ipfsCID.trim();
+      const request = buildRequest(submittedIpfsCID);
       tx = await getSignerContract().submitAnonymousReport(request, proof);
     }
 
     const receipt = await tx.wait();
     const evt = receipt.events?.find((e) => e.event === "AnonymousReportSubmitted");
     const submittedReportId = evt?.args?.reportId?.toString?.() || "";
-    if (submittedReportId) setThreadReportId(submittedReportId);
-    setStatus(`Anonymous report submitted via ${submitMode === "burner" ? "burner wallet" : "MetaMask"}`);
-    pushToast("success", submitMode === "burner" ? "Report submitted by burner wallet" : "Report submitted");
+    if (submittedReportId) {
+      setThreadReportId(submittedReportId);
+      setLastSubmittedThread({
+        reportId: submittedReportId,
+        threadSecretKey: effectiveThreadSecretKey,
+        ipfsCID: submittedIpfsCID,
+        submittedAt: new Date().toISOString()
+      });
+    }
+    setStatus(lang === "zh"
+      ? `匿名舉報已送出${submittedReportId ? `，Report ID=${submittedReportId}` : ""}。請保存 thread secret key。`
+      : `Anonymous report submitted${submittedReportId ? `, Report ID=${submittedReportId}` : ""}. Save the thread secret key.`);
+    pushToast("success", submitMode === "burner" ? (lang === "zh" ? "burner wallet 已送出舉報" : "Report submitted by burner wallet") : (lang === "zh" ? "舉報已送出" : "Report submitted"));
   }
 
   async function loadAllReports(companyOnly = false) {
+    const filter = typeof companyOnly === "object" ? companyOnly : { companyOnly };
     const c = getReadContract();
     const total = Number((await c.reportCount()).toString());
     const list = [];
     for (let i = 1; i <= total; i++) {
       const r = await c.reports(i);
-      if (companyOnly && r.companyId.toString() !== companyId.trim()) continue;
+      if (filter.companyOnly && r.companyId.toString() !== companyId.trim()) continue;
+      if (filter.groupOnly && r.reportGroupId.toString() !== reportGroupId.trim()) continue;
       const rs = await c.reportStatuses(i);
       list.push({
         id: Number(r.id),
@@ -957,8 +1138,49 @@ function App() {
     }
     list.sort((a, b) => b.id - a.id);
     setReports(list);
-    setStatus(`Loaded ${list.length}${companyOnly ? " company" : ""} reports`);
-    pushToast("success", `Loaded ${list.length} reports`);
+    const scopeText = filter.groupOnly ? ` reportGroupId=${reportGroupId.trim()}` : filter.companyOnly ? ` companyId=${companyId.trim()}` : "";
+    setStatus(`Loaded ${list.length}${scopeText} reports`);
+    pushToast("success", lang === "zh" ? `已載入 ${list.length} 筆舉報` : `Loaded ${list.length} reports`);
+    return list;
+  }
+
+  async function loadCompanyReportGroups() {
+    if (!companyId.trim()) {
+      throw new Error(lang === "zh" ? "請先填寫公司 ID" : "Please enter companyId first");
+    }
+
+    const c = getReadContract();
+    const [groupTotal, reportTotal] = await Promise.all([
+      c.reportGroupCount(),
+      c.reportCount()
+    ]);
+    const reportCounts = {};
+    for (let i = 1; i <= Number(reportTotal.toString()); i++) {
+      const r = await c.reports(i);
+      const gid = r.reportGroupId.toString();
+      reportCounts[gid] = (reportCounts[gid] || 0) + 1;
+    }
+
+    const groups = [];
+    for (let i = 1; i <= Number(groupTotal.toString()); i++) {
+      const rg = await c.reportGroups(i);
+      if (rg.companyId.toString() !== companyId.trim()) continue;
+      groups.push({
+        id: rg.id.toString(),
+        companyId: rg.companyId.toString(),
+        topicName: rg.topicName,
+        maxReportsPerMember: rg.maxReportsPerMember.toString(),
+        startTime: Number(rg.startTime),
+        endTime: Number(rg.endTime),
+        semaphoreGroupId: rg.semaphoreGroupId.toString(),
+        active: rg.active,
+        reportCount: reportCounts[rg.id.toString()] || 0
+      });
+    }
+    setCompanyReportGroups(groups);
+    setStatus(lang === "zh" ? `已載入公司 ${companyId.trim()} 的 ${groups.length} 個舉報主題` : `Loaded ${groups.length} report groups for company ${companyId.trim()}`);
+    pushToast("success", lang === "zh" ? `已載入 ${groups.length} 個舉報主題` : `Loaded ${groups.length} report groups`);
+    return groups;
   }
 
   async function updateReportStatus(reportId) {
@@ -978,7 +1200,8 @@ function App() {
   }
 
   async function decryptOne(reportId) {
-    if (!wallet) throw new Error(lang === "zh" ? "請先連接 Admin 錢包" : "Please connect Admin wallet first");
+    const adminWallet = wallet || await connectWallet();
+    if (!adminWallet) throw new Error(lang === "zh" ? "請先連接 Admin 錢包" : "Please connect Admin wallet first");
     const target = reports.find((r) => r.id === reportId);
     if (!target) return;
     const encryptedPayload = await fetchEncryptedReportFromIpfs(target);
@@ -987,13 +1210,13 @@ function App() {
     try {
       const payload = JSON.parse(encryptedPayload);
       if (payload.version === "thread-hybrid-v1" && payload.encryptedKey) {
-        recoveredThreadKey = await window.ethereum.request({ method: "eth_decrypt", params: [payload.encryptedKey, wallet] });
+        recoveredThreadKey = await window.ethereum.request({ method: "eth_decrypt", params: [payload.encryptedKey, adminWallet] });
         plain = await decryptWithThreadKey(recoveredThreadKey, payload.cipher);
       } else {
-        plain = await window.ethereum.request({ method: "eth_decrypt", params: [encryptedPayload, wallet] });
+        plain = await window.ethereum.request({ method: "eth_decrypt", params: [encryptedPayload, adminWallet] });
       }
     } catch {
-      plain = await window.ethereum.request({ method: "eth_decrypt", params: [encryptedPayload, wallet] });
+      plain = await window.ethereum.request({ method: "eth_decrypt", params: [encryptedPayload, adminWallet] });
     }
     setReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, plainText: plain, threadSecretKey: recoveredThreadKey || r.threadSecretKey || "" } : r)));
     if (recoveredThreadKey) setThreadSecretKey(recoveredThreadKey);
@@ -1093,7 +1316,7 @@ function App() {
     const cid = await uploadEncryptedReportToIpfs(payload);
 
     let tx;
-    if (senderRole === 2 || submitMode === "burner") {
+    if (senderRole === 2) {
       const provider = getBurnerProvider();
       const network = await provider.getNetwork();
       if (network.chainId === 80002) throw new Error("Amoy burner replies still need POL. Use local/permissioned zero-gas RPC.");
@@ -1102,6 +1325,7 @@ function App() {
       const c = new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, burner);
       tx = await c.addReportMessage(reportId, senderRole, cid, contentHash, { gasPrice: 0 });
     } else {
+      if (!wallet) await connectWallet();
       tx = await getSignerContract().addReportMessage(reportId, senderRole, cid, contentHash);
     }
     await tx.wait();
@@ -1111,7 +1335,10 @@ function App() {
 
   async function adminSendReply(reportId) {
     const report = reports.find((r) => r.id === reportId);
-    const key = report?.threadSecretKey || threadSecretKey;
+    const key = report?.threadSecretKey || "";
+    if (!key) {
+      throw new Error(lang === "zh" ? "請先按「解密」取得此案件的 thread secret key，再送出 Admin 回覆。" : "Please decrypt this report first to recover its thread secret key before sending an Admin reply.");
+    }
     const text = adminReplyDrafts[reportId] || "";
     await addThreadMessageOnChain(String(reportId), 1, text, key);
     setAdminReplyDrafts((prev) => ({ ...prev, [reportId]: "" }));
@@ -1121,47 +1348,6 @@ function App() {
     await addThreadMessageOnChain(threadReportId.trim(), 2, reporterReplyText, threadSecretKey.trim());
     setReporterReplyText("");
   }
-
-  const inputStyle = {
-    width: "100%",
-    border: "1px solid #d1d5db",
-    borderRadius: 8,
-    padding: "9px 10px",
-    boxSizing: "border-box"
-  };
-  const monoStyle = { fontFamily: "ui-monospace,monospace" };
-
-  const HelpText = ({ children }) => (
-    <div style={{ marginTop: 5, fontSize: 12.5, color: "#64748b", lineHeight: 1.45 }}>{children}</div>
-  );
-
-  const Field = ({ label, hint, value, onChange, placeholder, type = "text", style = {}, inputProps = {} }) => (
-    <label style={{ display: "block", marginBottom: 10, ...style }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{label}</div>
-      <input
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        type={type}
-        style={inputStyle}
-        {...inputProps}
-      />
-      {hint ? <HelpText>{hint}</HelpText> : null}
-    </label>
-  );
-
-  const TextAreaField = ({ label, hint, value, onChange, placeholder, height = 88, mono = false, style = {} }) => (
-    <label style={{ display: "block", marginBottom: 10, ...style }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{label}</div>
-      <textarea
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        style={{ ...inputStyle, height, ...(mono ? monoStyle : {}) }}
-      />
-      {hint ? <HelpText>{hint}</HelpText> : null}
-    </label>
-  );
 
   const Btn = ({ label, k, onClick, primary = false, disabled = false }) => (
     <button
@@ -1342,12 +1528,33 @@ function App() {
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>{ui.reportsTitle}</h3>
                   <Field label={ui.labels.ipfsGateway} hint={ui.examples.ipfsGateway} value={ipfsGateway} onChange={(e) => setIpfsGateway(e.target.value)} placeholder="e.g. http://127.0.0.1:8080" />
-                  <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 240px) auto auto auto", gap: 8, alignItems: "end", marginBottom: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, max-content))", gap: 8, alignItems: "end", marginBottom: 8 }}>
                     <Field label={ui.labels.reportCompanyFilter} hint={ui.examples.reportCompanyFilter} value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="e.g. 2" style={{ marginBottom: 0 }} />
+                    <Field label={ui.labels.reportGroupId} hint={ui.examples.reportGroupId} value={reportGroupId} onChange={(e) => setReportGroupId(e.target.value)} placeholder="e.g. 3" style={{ marginBottom: 0 }} />
+                    <Btn label={t.loadCompanyGroups} k="loadCompanyGroupsAdmin" onClick={loadCompanyReportGroups} disabled={!canRead} />
                     <Btn label={t.loadCompanyReports} k="loadCompanyReports" onClick={() => loadAllReports(true)} disabled={!canUse} />
+                    <Btn label={t.loadGroupReports} k="loadGroupReports" onClick={() => loadAllReports({ groupOnly: true })} disabled={!canUse} />
                     <Btn label={t.loadReports} k="loadReports" onClick={() => loadAllReports(false)} disabled={!canUse} />
                     <Btn label={t.decryptAll} k="decryptAll" onClick={decryptAll} disabled={!canUse || reports.length === 0} />
                   </div>
+                  {companyReportGroups.length > 0 ? (
+                    <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", marginBottom: 10 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "70px 1.5fr 120px 120px 120px", gap: 8, padding: 8, background: "#f8fafc", fontWeight: 800, color: "#334155" }}>
+                        <span>ID</span><span>{ui.labels.topicName}</span><span>{ui.labels.maxReports}</span><span>{lang === "zh" ? "目前舉報數" : "Reports"}</span><span>Semaphore</span>
+                      </div>
+                      {companyReportGroups.map((g) => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => setReportGroupId(g.id)}
+                          style={{ width: "100%", display: "grid", gridTemplateColumns: "70px 1.5fr 120px 120px 120px", gap: 8, padding: 8, border: 0, borderTop: "1px solid #e2e8f0", background: reportGroupId === g.id ? "#ecfdf5" : "#fff", textAlign: "left", cursor: "pointer" }}
+                        >
+                          <span>{g.id}</span><span>{g.topicName}</span><span>{g.maxReportsPerMember}</span><span>{g.reportCount}</span><span>{g.semaphoreGroupId}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <HelpText>{lang === "zh" ? `目前列表：${reports.length} 筆。可先查公司主題，再點選表格中的主題 ID 查指定主題舉報。` : `Current list: ${reports.length} reports. Load company groups first, then click a group row to filter reports by group.`}</HelpText>
                   {reports.length === 0 ? <div>{ui.noReports}</div> : reports.map((r) => (
                     <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginBottom: 8, overflowWrap: "anywhere" }}>
                       <div><strong>#{r.id}</strong> | {new Date(r.timestamp * 1000).toLocaleString()}</div>
@@ -1391,7 +1598,7 @@ function App() {
                         <div style={{ fontWeight: 700, marginBottom: 6 }}>{ui.anonymousThreadTitle}</div>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                           <Btn label={t.loadThread} k={`loadThread_${r.id}`} onClick={() => loadReportMessages(String(r.id))} disabled={!canRead} />
-                          <Btn label={t.decryptThread} k={`decryptThread_${r.id}`} onClick={() => decryptThreadMessages(String(r.id), r.threadSecretKey || threadSecretKey)} disabled={!canUse} />
+                          <Btn label={t.decryptThread} k={`decryptThread_${r.id}`} onClick={() => decryptThreadMessages(String(r.id), r.threadSecretKey)} disabled={!canRead || !r.threadSecretKey} />
                         </div>
                         <TextAreaField
                           label={ui.labels.adminReply}
@@ -1401,7 +1608,8 @@ function App() {
                           placeholder={lang === "zh" ? "例如：請補充發生日期與佐證" : "e.g. please provide date and evidence"}
                           height={72}
                         />
-                        <div style={{ marginTop: 8 }}><Btn label={t.sendReply} k={`adminReply_${r.id}`} onClick={() => adminSendReply(r.id)} disabled={!canUse || !(r.threadSecretKey || threadSecretKey)} /></div>
+                        <div style={{ marginTop: 8 }}><Btn label={t.sendReply} k={`adminReply_${r.id}`} onClick={() => adminSendReply(r.id)} disabled={!CONTRACT_ADDRESS || !r.threadSecretKey} /></div>
+                        {!r.threadSecretKey ? <HelpText>{lang === "zh" ? "請先按「解密」取得此案件 thread key，才能送出 Admin 回覆。" : "Decrypt this report first to recover the thread key before sending an Admin reply."}</HelpText> : null}
                         {(threadMessages[String(r.id)] || []).length > 0 ? (
                           <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
                             {(threadMessages[String(r.id)] || []).map((m) => (
@@ -1421,6 +1629,36 @@ function App() {
               </div>
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
+                  <h3 style={{ marginTop: 0 }}>{ui.companyGroupsTitle}</h3>
+                  <p style={{ color: "#64748b", marginTop: 0 }}>{ui.companyGroupsIntro}</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 260px) auto", gap: 8, alignItems: "end", marginBottom: 10 }}>
+                    <Field label={ui.labels.companyId} hint={ui.examples.companyId} value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="e.g. 2" style={{ marginBottom: 0 }} />
+                    <Btn label={t.loadCompanyGroups} k="loadCompanyGroupsEmployee" onClick={loadCompanyReportGroups} disabled={!canRead} />
+                  </div>
+                  {companyReportGroups.length > 0 ? (
+                    <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflowX: "auto" }}>
+                      <div style={{ minWidth: 640 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "80px 1.5fr 130px 130px 130px", gap: 8, padding: 8, background: "#f8fafc", fontWeight: 800, color: "#334155" }}>
+                          <span>Report Group ID</span><span>{ui.labels.topicName}</span><span>{ui.labels.maxReports}</span><span>{lang === "zh" ? "目前舉報數" : "Reports"}</span><span>Semaphore</span>
+                        </div>
+                        {companyReportGroups.map((g) => (
+                          <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => setReportGroupId(g.id)}
+                            style={{ width: "100%", display: "grid", gridTemplateColumns: "80px 1.5fr 130px 130px 130px", gap: 8, padding: 8, border: 0, borderTop: "1px solid #e2e8f0", background: reportGroupId === g.id ? "#eff6ff" : "#fff", textAlign: "left", cursor: "pointer" }}
+                          >
+                            <span>{g.id}</span><span>{g.topicName}</span><span>{g.maxReportsPerMember}</span><span>{g.reportCount}</span><span>{g.semaphoreGroupId}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <HelpText>{lang === "zh" ? "尚未載入主題。輸入公司 ID 後按「查詢公司舉報主題」。" : "No groups loaded yet. Enter a company ID and click Load Company Report Groups."}</HelpText>
+                  )}
+                </div>
+
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>{ui.step1Title}</h3>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1474,12 +1712,38 @@ function App() {
                     </label>
                     {submitMode === "burner" ? (
                       <>
-                        <Field label={ui.labels.burnerRpc} hint={ui.examples.burnerRpc} value={burnerRpcUrl} onChange={(e) => setBurnerRpcUrl(e.target.value)} placeholder="e.g. http://127.0.0.1:8545" />
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 8 }}>
-                          <Field label={ui.labels.ipfsClusterApi} hint={ui.examples.ipfsClusterApi} value={ipfsClusterApi} onChange={(e) => setIpfsClusterApi(e.target.value)} placeholder="e.g. http://127.0.0.1:9094" style={{ marginBottom: 0 }} />
-                          <Field label={ui.labels.ipfsUser} hint={ui.examples.ipfsUser} value={ipfsClusterUser} onChange={(e) => setIpfsClusterUser(e.target.value)} placeholder="e.g. admin" style={{ marginBottom: 0 }} />
-                          <Field label={ui.labels.ipfsPassword} hint={ui.examples.ipfsPassword} value={ipfsClusterPassword} onChange={(e) => setIpfsClusterPassword(e.target.value)} placeholder="e.g. changeme" type="password" style={{ marginBottom: 0 }} />
+                        <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, background: "#fff" }}>
+                          <div style={{ fontWeight: 800, marginBottom: 6 }}>{ui.systemSubmitSettings}</div>
+                          <div style={{ color: "#475569", fontSize: 13, lineHeight: 1.5 }}>{ui.systemSubmitHint}</div>
+                          <div style={{ marginTop: 8, display: "grid", gap: 4, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", overflowWrap: "anywhere" }}>
+                            <span>RPC: {burnerRpcUrl || "-"}</span>
+                            <span>IPFS Cluster API: {ipfsClusterApi || "-"}</span>
+                            <span>IPFS Cluster User: {ipfsClusterUser || "-"}</span>
+                            <span>IPFS Cluster Password: {ipfsClusterPassword ? "configured" : "missing"}</span>
+                          </div>
+                          <div style={{ marginTop: 8, color: ipfsClusterPassword ? "#166534" : "#991b1b", fontSize: 13 }}>
+                            {ipfsClusterPassword ? ui.systemConfigReady : ui.systemConfigMissing}
+                          </div>
+                          <div style={{ marginTop: 8 }}>
+                            <button
+                              type="button"
+                              onClick={() => setShowAdvancedSubmitSettings((v) => !v)}
+                              style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", background: "#fff", cursor: "pointer", fontWeight: 700 }}
+                            >
+                              {showAdvancedSubmitSettings ? t.hideAdvancedSettings : t.advancedSettings}
+                            </button>
+                          </div>
                         </div>
+                        {showAdvancedSubmitSettings ? (
+                          <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                            <Field label={ui.labels.burnerRpc} hint={ui.examples.burnerRpc} value={burnerRpcUrl} onChange={(e) => setBurnerRpcUrl(e.target.value)} placeholder="e.g. http://127.0.0.1:8545" />
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                              <Field label={ui.labels.ipfsClusterApi} hint={ui.examples.ipfsClusterApi} value={ipfsClusterApi} onChange={(e) => setIpfsClusterApi(e.target.value)} placeholder="e.g. http://127.0.0.1:9094" style={{ marginBottom: 0 }} />
+                              <Field label={ui.labels.ipfsUser} hint={ui.examples.ipfsUser} value={ipfsClusterUser} onChange={(e) => setIpfsClusterUser(e.target.value)} placeholder="e.g. admin" style={{ marginBottom: 0 }} />
+                              <Field label={ui.labels.ipfsPassword} hint={ui.examples.ipfsPassword} value={ipfsClusterPassword} onChange={(e) => setIpfsClusterPassword(e.target.value)} placeholder="e.g. changeme" type="password" style={{ marginBottom: 0 }} />
+                            </div>
+                          </div>
+                        ) : null}
                         <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
                           {ui.burnerHint}
                         </div>
@@ -1493,6 +1757,38 @@ function App() {
                     <Btn label={t.submit} k="submit" onClick={submitAnonymousReport} primary disabled={!CONTRACT_ADDRESS || (submitMode === "metamask" && !canUse)} />
                     <Btn label={t.loadReports} k="loadReportsEmp" onClick={() => loadAllReports(false)} disabled={!canRead} />
                   </div>
+                  {lastSubmittedThread ? (
+                    <div style={{ marginTop: 10, border: "1px solid #facc15", background: "#fffbeb", borderRadius: 10, padding: 10, overflowWrap: "anywhere" }}>
+                      <strong>{ui.latestThreadKeyTitle}</strong>
+                      <div style={{ marginTop: 6 }}>Report ID: {lastSubmittedThread.reportId}</div>
+                      <div style={{ marginTop: 4 }}>IPFS CID: {lastSubmittedThread.ipfsCID || "-"}</div>
+                      <textarea
+                        readOnly
+                        value={lastSubmittedThread.threadSecretKey || ""}
+                        style={{ ...inputStyle, ...monoStyle, height: 66, marginTop: 8 }}
+                      />
+                      <div style={{ marginTop: 6, color: "#92400e", fontSize: 13 }}>{ui.latestThreadKeyHint}</div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard?.writeText(lastSubmittedThread.threadSecretKey || "")}
+                          style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", background: "#fff", cursor: "pointer", fontWeight: 700 }}
+                        >
+                          {lang === "zh" ? "複製 thread key" : "Copy thread key"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setThreadReportId(lastSubmittedThread.reportId);
+                            setThreadSecretKey(lastSubmittedThread.threadSecretKey || "");
+                          }}
+                          style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", background: "#fff", cursor: "pointer", fontWeight: 700 }}
+                        >
+                          {lang === "zh" ? "帶入下方對話欄" : "Fill thread form below"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   {reports.length > 0 ? reports.map((r) => (
                     <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginTop: 8, overflowWrap: "anywhere" }}>
                       <div><strong>#{r.id}</strong> | {new Date(r.timestamp * 1000).toLocaleString()}</div>
