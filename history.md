@@ -1,5 +1,13 @@
 # 專案 Push 修改紀錄
 
+## 2026.05.21_18:39:30
+* 簡化 Employee 送出流程，移除 MetaMask 錢包送出選項，只保留匿名 burner wallet。
+* 移除 Step 2 的 IPFS CID 手動輸入欄位，改由系統在送出時自動上傳密文到 Private IPFS 並取得 CID。
+* 調整送出流程為固定 burner 模式：先進行鏈上 callStatic 預檢，確認 quota / nullifier / proof 可通過後，再上傳 IPFS 並送出鏈上交易。
+* 更新中英文操作文案，將「加密並上傳舉報」改為「加密並準備舉報」，避免誤解 Step 2 會立即上傳 IPFS。
+* 將讀取合約資訊改為使用 burner RPC provider，讓 Employee 查看與預檢流程不再依賴 MetaMask。
+* 完成前端 production build 與瀏覽器 UI 檢查，確認 Employee 頁面不再顯示 MetaMask 送出選項與 IPFS CID 輸入欄。
+
 ## 2026.05.19_16:04:59
 * 修正 Employee 前端輸入框每打一個字就失焦的問題，將 Field / TextAreaField 移出 App component，避免 React 重新掛載輸入元件。
 * Employee tab 新增依公司 ID 查詢舉報主題功能，可查看 Report Group ID、主題名稱、每人可舉報次數、目前鏈上舉報數量與 Semaphore group ID。

@@ -97,7 +97,6 @@ function App() {
   const [messageHash, setMessageHash] = useState("");
   const [encryptedReport, setEncryptedReport] = useState("");
   const [proofJson, setProofJson] = useState("");
-  const [submitMode, setSubmitMode] = useState("burner");
   const [burnerRpcUrl, setBurnerRpcUrl] = useState(LOCAL_RPC_URL);
   const [lastBurnerAddress, setLastBurnerAddress] = useState("");
   const [ipfsClusterApi, setIpfsClusterApi] = useState(DEFAULT_IPFS_CLUSTER_API);
@@ -117,7 +116,7 @@ function App() {
   const [reporterReplyText, setReporterReplyText] = useState("");
 
   const canUse = useMemo(() => !!window.ethereum && !!CONTRACT_ADDRESS, []);
-  const canRead = !!CONTRACT_ADDRESS && (!!window.ethereum || submitMode === "burner");
+  const canRead = !!CONTRACT_ADDRESS;
   const credentialContext = `${companyId.trim() || "-"}:${reportGroupId.trim() || "-"}:${period.trim() || "-"}:${reportSlot.trim() || "-"}`;
   const helpCopy = {
     zh: {
@@ -141,7 +140,7 @@ function App() {
         "Generate Identity 會產生 privateKey(base64) 與 commitment。",
         "Preload proof artifacts 會先載入 proving wasm/zkey，減少送出時等待。",
         "Prepare anonymous credential 會先產生資格 proof，證明自己屬於目前 company/group/period/slot。",
-        "Encrypt + upload report 只負責加密內容、計算 hash，burner 模式會自動上傳 Private IPFS。",
+        "加密並準備舉報會先在本機加密內容、計算 hash；真正送出時才自動上傳 Private IPFS。",
         "Submit Anonymous Report 使用已準備好的匿名憑證，不會重新產生 proof。"
       ],
       reportsTitle: "舉報與解密",
@@ -172,7 +171,7 @@ function App() {
         "Generate Identity creates a privateKey(base64) and commitment.",
         "Preload proof artifacts loads proving wasm/zkey early to reduce submit-time waiting.",
         "Prepare anonymous credential proves membership for the current company/group/period/slot.",
-        "Encrypt + upload report encrypts content, computes hash, and auto-uploads to Private IPFS in burner mode.",
+        "Encrypt + Prepare Report encrypts content and computes the hash locally; the app uploads to Private IPFS only when submitting.",
         "Submit Anonymous Report reuses the prepared credential and does not regenerate proof."
       ],
       reportsTitle: "Reports and decryption",
@@ -209,8 +208,6 @@ function App() {
       setAdminPub: "設定公司 Admin 公鑰",
       genProof: "加密並準備舉報",
       submit: "送出匿名舉報",
-      submitMode: "送出方式",
-      metamaskMode: "使用 MetaMask 錢包",
       burnerMode: "使用匿名 burner wallet",
       advancedSettings: "進階設定",
       hideAdvancedSettings: "隱藏進階設定",
@@ -252,8 +249,6 @@ function App() {
       setAdminPub: "Set Company Admin PubKey",
       genProof: "Encrypt + Prepare Report",
       submit: "Submit Anonymous Report",
-      submitMode: "Submit Mode",
-      metamaskMode: "Use MetaMask wallet",
       burnerMode: "Use anonymous burner wallet",
       advancedSettings: "Advanced Settings",
       hideAdvancedSettings: "Hide Advanced Settings",
@@ -307,7 +302,7 @@ function App() {
       expand: "展開",
       success: "成功",
       error: "失敗",
-      generatedAfterEncrypt: "按下「加密並上傳舉報」後產生",
+      generatedAfterEncrypt: "按下「加密並準備舉報」後產生",
       threadKeyTitle: "請保存這組案件 thread secret key",
       threadKeyHint: "每筆舉報只會有一組對稱金鑰。請私下保存，它會用來查看 Admin 回覆與送出匿名補充說明。",
       memberPrivacyHint: "移除 commitment 會讓離職員工無法再用目前群組資格提交。公司可以知道 commitment 對應哪位員工，但舉報 proof 本身不會揭露是哪個 commitment 送出。",
@@ -363,7 +358,7 @@ function App() {
         reportCompanyFilter: "例如：2。只查詢這間公司的舉報。",
         period: "例如：2026-Q1。會成為 nullifier scope 的一部分。",
         reportSlot: "例如：1。若每人可舉報 3 次，可使用 1、2、3。",
-        ipfsCID: "burner 模式會自動上傳並回填；手動模式請貼上 IPFS CID。",
+        ipfsCID: "系統會自動上傳密文到 Private IPFS 並回填 CID。",
         reportPlaintext: "填寫要舉報的明文內容，送出前會在前端加密。",
         encryptedPayload: "加密後的 JSON payload，通常不用手動修改。",
         proofJson: "Prepare anonymous credential 後產生，通常不用手動修改。",
@@ -413,7 +408,7 @@ function App() {
       expand: "Expand",
       success: "Success",
       error: "Error",
-      generatedAfterEncrypt: "generated after Encrypt + upload report",
+      generatedAfterEncrypt: "generated after Encrypt + Prepare Report",
       threadKeyTitle: "Save this report thread secret key",
       threadKeyHint: "One report uses one symmetric key. Keep it private; it is required to read Admin replies and send anonymous follow-ups.",
       memberPrivacyHint: "Removing a commitment prevents future credentials from the current member tree. Company HR may know which employee owns a commitment, but submitted reports remain unlinkable to a specific commitment through the proof alone.",
@@ -469,7 +464,7 @@ function App() {
         reportCompanyFilter: "e.g. 2. Load only this company's reports.",
         period: "e.g. 2026-Q1. This becomes part of the nullifier scope.",
         reportSlot: "e.g. 1. If max reports is 3, use slots 1, 2, and 3.",
-        ipfsCID: "Burner mode uploads and fills this automatically; manual mode needs an IPFS CID.",
+        ipfsCID: "The system uploads ciphertext to Private IPFS and fills the CID automatically.",
         reportPlaintext: "Write the plaintext report. The frontend encrypts it before upload.",
         encryptedPayload: "Encrypted JSON payload. Usually no manual edits needed.",
         proofJson: "Generated after Prepare anonymous credential. Usually no manual edits needed.",
@@ -516,7 +511,7 @@ function App() {
   function getProvider() { return new ethers.providers.Web3Provider(window.ethereum); }
   function getSignerContract() { return new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getProvider().getSigner()); }
   function getBurnerProvider() { return new ethers.providers.JsonRpcProvider(burnerRpcUrl.trim() || LOCAL_RPC_URL); }
-  function getReadProvider() { return submitMode === "burner" ? getBurnerProvider() : getProvider(); }
+  function getReadProvider() { return getBurnerProvider(); }
   function getReadContract() { return new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getReadProvider()); }
   function reportStatusLabel(status) {
     const labels = lang === "zh"
@@ -982,7 +977,7 @@ function App() {
     setPreparedCredentialContext(credentialContext);
     setGroupId(gid);
     setProofScope(scope);
-    setStatus(lang === "zh" ? "匿名憑證已產生，可以進行加密並上傳舉報。" : "Anonymous credential prepared. You can encrypt and upload the report now.");
+    setStatus(lang === "zh" ? "匿名憑證已產生，可以進行加密並準備舉報。" : "Anonymous credential prepared. You can encrypt and prepare the report now.");
     pushToast("success", lang === "zh" ? "匿名憑證已產生" : "Anonymous credential prepared");
   }
 
@@ -993,11 +988,6 @@ function App() {
     if (!proofJson.trim() || preparedCredentialContext !== credentialContext) {
       setStatus(lang === "zh" ? "目前沒有可用匿名憑證，正在先幫你產生..." : "No valid anonymous credential yet. Preparing it first...");
       await prepareAnonymousCredential();
-    }
-    if (submitMode !== "burner" && !ipfsCID.trim()) {
-      throw new Error(lang === "zh"
-        ? "請填寫 IPFS CID，或切換成 burner wallet 讓前端自動上傳。"
-        : "Please enter ipfsCID, or switch to burner wallet for automatic upload.");
     }
     if (!companyId.trim() || !reportGroupId.trim()) {
       throw new Error(lang === "zh" ? "請填寫公司 ID 與舉報主題 ID" : "Please enter companyId and reportGroupId");
@@ -1024,6 +1014,7 @@ function App() {
     setThreadSecretKey(secretKey);
     setEncryptedReport(encrypted);
     setMessageHash(contentHash);
+    setIpfsCID("");
     setStatus(lang === "zh"
       ? "舉報已在本機加密並準備完成。burner 模式會在送出前先做鏈上預檢，通過後才上傳 IPFS。"
       : "Report encrypted locally and prepared. In burner mode, the app preflights the chain before uploading to IPFS.");
@@ -1056,37 +1047,25 @@ function App() {
       period: period.trim(),
       reportSlot: reportSlot.trim()
     });
-    let tx;
-    let submittedIpfsCID = ipfsCID.trim();
-
-    if (submitMode === "burner") {
-      const provider = getBurnerProvider();
-      const network = await provider.getNetwork();
-      if (network.chainId === 80002) {
-        throw new Error("Amoy is a public testnet. Burner wallet still needs POL there. Use burner mode only on local/permissioned zero-gas chains.");
-      }
-      const burner = ethers.Wallet.createRandom().connect(provider);
-      setLastBurnerAddress(burner.address);
-      const c = new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, burner);
-      const preflightRequest = buildRequest("preflight-cid");
-      try {
-        await c.callStatic.submitAnonymousReport(preflightRequest, proof, { gasPrice: 0 });
-      } catch (error) {
-        throw new Error(lang === "zh"
-          ? `鏈上預檢未通過，尚未上傳 IPFS。可能原因：舉報次數 slot 已用過、quota 超出、proof 已失效或公司/主題不相符。原始錯誤：${parseErr(error)}`
-          : `On-chain preflight failed before IPFS upload. Possible causes: used slot, quota exceeded, stale proof, or company/group mismatch. Raw error: ${parseErr(error)}`);
-      }
-      submittedIpfsCID = await uploadEncryptedReportToIpfs(effectiveEncryptedReport);
-      setIpfsCID(submittedIpfsCID);
-      tx = await c.submitAnonymousReport(buildRequest(submittedIpfsCID), proof, { gasPrice: 0 });
-    } else {
-      if (!ipfsCID.trim()) {
-        throw new Error(lang === "zh" ? "MetaMask 模式請先填寫 IPFS CID" : "Please enter ipfsCID in MetaMask mode");
-      }
-      submittedIpfsCID = ipfsCID.trim();
-      const request = buildRequest(submittedIpfsCID);
-      tx = await getSignerContract().submitAnonymousReport(request, proof);
+    const provider = getBurnerProvider();
+    const network = await provider.getNetwork();
+    if (network.chainId === 80002) {
+      throw new Error("Amoy is a public testnet. Burner wallet still needs POL there. Use burner mode only on local/permissioned zero-gas chains.");
     }
+    const burner = ethers.Wallet.createRandom().connect(provider);
+    setLastBurnerAddress(burner.address);
+    const c = new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, burner);
+    const preflightRequest = buildRequest("preflight-cid");
+    try {
+      await c.callStatic.submitAnonymousReport(preflightRequest, proof, { gasPrice: 0 });
+    } catch (error) {
+      throw new Error(lang === "zh"
+        ? `鏈上預檢未通過，尚未上傳 IPFS。可能原因：舉報次數 slot 已用過、quota 超出、proof 已失效或公司/主題不相符。原始錯誤：${parseErr(error)}`
+        : `On-chain preflight failed before IPFS upload. Possible causes: used slot, quota exceeded, stale proof, or company/group mismatch. Raw error: ${parseErr(error)}`);
+    }
+    const submittedIpfsCID = await uploadEncryptedReportToIpfs(effectiveEncryptedReport);
+    setIpfsCID(submittedIpfsCID);
+    const tx = await c.submitAnonymousReport(buildRequest(submittedIpfsCID), proof, { gasPrice: 0 });
 
     const receipt = await tx.wait();
     const evt = receipt.events?.find((e) => e.event === "AnonymousReportSubmitted");
@@ -1103,7 +1082,7 @@ function App() {
     setStatus(lang === "zh"
       ? `匿名舉報已送出${submittedReportId ? `，Report ID=${submittedReportId}` : ""}。請保存 thread secret key。`
       : `Anonymous report submitted${submittedReportId ? `, Report ID=${submittedReportId}` : ""}. Save the thread secret key.`);
-    pushToast("success", submitMode === "burner" ? (lang === "zh" ? "burner wallet 已送出舉報" : "Report submitted by burner wallet") : (lang === "zh" ? "舉報已送出" : "Report submitted"));
+    pushToast("success", lang === "zh" ? "burner wallet 已送出舉報" : "Report submitted by burner wallet");
   }
 
   async function loadAllReports(companyOnly = false) {
@@ -1680,7 +1659,6 @@ function App() {
                     <Field label={ui.labels.period} hint={ui.examples.period} value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="e.g. 2026-Q1" style={{ marginBottom: 0 }} />
                     <Field label={ui.labels.reportSlot} hint={ui.examples.reportSlot} value={reportSlot} onChange={(e) => setReportSlot(e.target.value)} placeholder="e.g. 1" style={{ marginBottom: 0 }} />
                   </div>
-                  <Field label={ui.labels.ipfsCID} hint={ui.examples.ipfsCID} value={ipfsCID} onChange={(e) => setIpfsCID(e.target.value)} placeholder={submitMode === "burner" ? (lang === "zh" ? "burner 模式會自動回填" : "auto-filled in burner mode") : "e.g. bafy..."} />
                   <TextAreaField label={ui.labels.reportPlaintext} hint={ui.examples.reportPlaintext} value={reportPlaintext} onChange={(e) => setReportPlaintext(e.target.value)} placeholder={lang === "zh" ? "例如：請描述事件時間、地點、人物與佐證" : "e.g. describe time, location, people involved, and evidence"} height={110} />
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
                     <Btn label={t.preloadProof} k="preloadProof" onClick={preloadProofArtifacts} disabled={!canRead} />
@@ -1703,58 +1681,48 @@ function App() {
                 <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>{ui.step3Title}</h3>
                   <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginBottom: 10, background: "#f8fafc" }}>
-                    <div style={{ fontWeight: 700, marginBottom: 8 }}>{t.submitMode}</div>
-                    <label style={{ display: "block", marginBottom: 6 }}>
-                      <input type="radio" checked={submitMode === "metamask"} onChange={() => setSubmitMode("metamask")} /> {t.metamaskMode}
-                    </label>
-                    <label style={{ display: "block", marginBottom: 8 }}>
-                      <input type="radio" checked={submitMode === "burner"} onChange={() => setSubmitMode("burner")} /> {t.burnerMode}
-                    </label>
-                    {submitMode === "burner" ? (
-                      <>
-                        <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, background: "#fff" }}>
-                          <div style={{ fontWeight: 800, marginBottom: 6 }}>{ui.systemSubmitSettings}</div>
-                          <div style={{ color: "#475569", fontSize: 13, lineHeight: 1.5 }}>{ui.systemSubmitHint}</div>
-                          <div style={{ marginTop: 8, display: "grid", gap: 4, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", overflowWrap: "anywhere" }}>
-                            <span>RPC: {burnerRpcUrl || "-"}</span>
-                            <span>IPFS Cluster API: {ipfsClusterApi || "-"}</span>
-                            <span>IPFS Cluster User: {ipfsClusterUser || "-"}</span>
-                            <span>IPFS Cluster Password: {ipfsClusterPassword ? "configured" : "missing"}</span>
-                          </div>
-                          <div style={{ marginTop: 8, color: ipfsClusterPassword ? "#166534" : "#991b1b", fontSize: 13 }}>
-                            {ipfsClusterPassword ? ui.systemConfigReady : ui.systemConfigMissing}
-                          </div>
-                          <div style={{ marginTop: 8 }}>
-                            <button
-                              type="button"
-                              onClick={() => setShowAdvancedSubmitSettings((v) => !v)}
-                              style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", background: "#fff", cursor: "pointer", fontWeight: 700 }}
-                            >
-                              {showAdvancedSubmitSettings ? t.hideAdvancedSettings : t.advancedSettings}
-                            </button>
-                          </div>
+                    <div style={{ fontWeight: 800, marginBottom: 8 }}>{t.burnerMode}</div>
+                    <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, background: "#fff" }}>
+                      <div style={{ fontWeight: 800, marginBottom: 6 }}>{ui.systemSubmitSettings}</div>
+                      <div style={{ color: "#475569", fontSize: 13, lineHeight: 1.5 }}>{ui.systemSubmitHint}</div>
+                      <div style={{ marginTop: 8, display: "grid", gap: 4, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", overflowWrap: "anywhere" }}>
+                        <span>RPC: {burnerRpcUrl || "-"}</span>
+                        <span>IPFS Cluster API: {ipfsClusterApi || "-"}</span>
+                        <span>IPFS Cluster User: {ipfsClusterUser || "-"}</span>
+                        <span>IPFS Cluster Password: {ipfsClusterPassword ? "configured" : "missing"}</span>
+                      </div>
+                      <div style={{ marginTop: 8, color: ipfsClusterPassword ? "#166534" : "#991b1b", fontSize: 13 }}>
+                        {ipfsClusterPassword ? ui.systemConfigReady : ui.systemConfigMissing}
+                      </div>
+                      <div style={{ marginTop: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvancedSubmitSettings((v) => !v)}
+                          style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", background: "#fff", cursor: "pointer", fontWeight: 700 }}
+                        >
+                          {showAdvancedSubmitSettings ? t.hideAdvancedSettings : t.advancedSettings}
+                        </button>
+                      </div>
+                    </div>
+                    {showAdvancedSubmitSettings ? (
+                      <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                        <Field label={ui.labels.burnerRpc} hint={ui.examples.burnerRpc} value={burnerRpcUrl} onChange={(e) => setBurnerRpcUrl(e.target.value)} placeholder="e.g. http://127.0.0.1:8545" />
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                          <Field label={ui.labels.ipfsClusterApi} hint={ui.examples.ipfsClusterApi} value={ipfsClusterApi} onChange={(e) => setIpfsClusterApi(e.target.value)} placeholder="e.g. http://127.0.0.1:9094" style={{ marginBottom: 0 }} />
+                          <Field label={ui.labels.ipfsUser} hint={ui.examples.ipfsUser} value={ipfsClusterUser} onChange={(e) => setIpfsClusterUser(e.target.value)} placeholder="e.g. admin" style={{ marginBottom: 0 }} />
+                          <Field label={ui.labels.ipfsPassword} hint={ui.examples.ipfsPassword} value={ipfsClusterPassword} onChange={(e) => setIpfsClusterPassword(e.target.value)} placeholder="e.g. changeme" type="password" style={{ marginBottom: 0 }} />
                         </div>
-                        {showAdvancedSubmitSettings ? (
-                          <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                            <Field label={ui.labels.burnerRpc} hint={ui.examples.burnerRpc} value={burnerRpcUrl} onChange={(e) => setBurnerRpcUrl(e.target.value)} placeholder="e.g. http://127.0.0.1:8545" />
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
-                              <Field label={ui.labels.ipfsClusterApi} hint={ui.examples.ipfsClusterApi} value={ipfsClusterApi} onChange={(e) => setIpfsClusterApi(e.target.value)} placeholder="e.g. http://127.0.0.1:9094" style={{ marginBottom: 0 }} />
-                              <Field label={ui.labels.ipfsUser} hint={ui.examples.ipfsUser} value={ipfsClusterUser} onChange={(e) => setIpfsClusterUser(e.target.value)} placeholder="e.g. admin" style={{ marginBottom: 0 }} />
-                              <Field label={ui.labels.ipfsPassword} hint={ui.examples.ipfsPassword} value={ipfsClusterPassword} onChange={(e) => setIpfsClusterPassword(e.target.value)} placeholder="e.g. changeme" type="password" style={{ marginBottom: 0 }} />
-                            </div>
-                          </div>
-                        ) : null}
-                        <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
-                          {ui.burnerHint}
-                        </div>
-                        <div style={{ marginTop: 6, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", overflowWrap: "anywhere" }}>
-                          {ui.lastBurner}: {lastBurnerAddress || "-"}
-                        </div>
-                      </>
+                      </div>
                     ) : null}
+                    <div style={{ marginTop: 8, fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+                      {ui.burnerHint}
+                    </div>
+                    <div style={{ marginTop: 6, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", overflowWrap: "anywhere" }}>
+                      {ui.lastBurner}: {lastBurnerAddress || "-"}
+                    </div>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Btn label={t.submit} k="submit" onClick={submitAnonymousReport} primary disabled={!CONTRACT_ADDRESS || (submitMode === "metamask" && !canUse)} />
+                    <Btn label={t.submit} k="submit" onClick={submitAnonymousReport} primary disabled={!CONTRACT_ADDRESS} />
                     <Btn label={t.loadReports} k="loadReportsEmp" onClick={() => loadAllReports(false)} disabled={!canRead} />
                   </div>
                   {lastSubmittedThread ? (
