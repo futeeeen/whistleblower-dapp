@@ -1,10 +1,11 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 import { Buffer } from "buffer";
 import { Identity } from "@semaphore-protocol/identity";
 import { Group } from "@semaphore-protocol/group";
 import { generateProof } from "@semaphore-protocol/proof";
 import appArtifact from "./EmployeeSemaphoreWhistleblower.json";
+import "./App.css";
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || "";
 const LOCAL_CHAIN_HEX = "0x7a69";
@@ -18,20 +19,23 @@ const REPORT_CREDENTIAL_MESSAGE_TAG = "REPORT_CREDENTIAL_V1";
 
 const inputStyle = {
   width: "100%",
-  border: "1px solid #d1d5db",
-  borderRadius: 8,
-  padding: "9px 10px",
-  boxSizing: "border-box"
+  border: "1px solid #d5dfeb",
+  borderRadius: 14,
+  padding: "12px 13px",
+  boxSizing: "border-box",
+  background: "rgba(255, 255, 255, 0.88)",
+  color: "#132238",
+  outline: "none"
 };
 const monoStyle = { fontFamily: "ui-monospace,monospace" };
 
 const HelpText = ({ children }) => (
-  <div style={{ marginTop: 5, fontSize: 12.5, color: "#64748b", lineHeight: 1.45 }}>{children}</div>
+  <div className="help-copy" style={{ marginTop: 5, fontSize: 12.5, color: "#64748b", lineHeight: 1.45 }}>{children}</div>
 );
 
 const Field = ({ label, hint, value, onChange, placeholder, type = "text", style = {}, inputProps = {} }) => (
   <label style={{ display: "block", marginBottom: 10, ...style }}>
-    <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{label}</div>
+    <div className="field-label" style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{label}</div>
     <input
       value={value}
       onChange={onChange}
@@ -46,7 +50,7 @@ const Field = ({ label, hint, value, onChange, placeholder, type = "text", style
 
 const TextAreaField = ({ label, hint, value, onChange, placeholder, height = 88, mono = false, style = {} }) => (
   <label style={{ display: "block", marginBottom: 10, ...style }}>
-    <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{label}</div>
+    <div className="field-label" style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{label}</div>
     <textarea
       value={value}
       onChange={onChange}
@@ -69,6 +73,15 @@ function App() {
   const [wallet, setWallet] = useState("");
   const [status, setStatus] = useState("");
   const [diag, setDiag] = useState("");
+  const [botPosition, setBotPosition] = useState(() => {
+    if (typeof window === "undefined") return { x: 24, y: 120 };
+    return {
+      x: Math.max(18, window.innerWidth - 354),
+      y: Math.min(Math.max(112, window.innerHeight - 230), 520)
+    };
+  });
+  const [botDragging, setBotDragging] = useState(false);
+  const botDragOffset = useRef({ x: 0, y: 0 });
 
   const [newMemberCommitment, setNewMemberCommitment] = useState("");
   const [removeMemberCommitment, setRemoveMemberCommitment] = useState("");
@@ -107,6 +120,7 @@ function App() {
   const [ipfsGateway, setIpfsGateway] = useState("http://127.0.0.1:8080");
   const [reports, setReports] = useState([]);
   const [companyReportGroups, setCompanyReportGroups] = useState([]);
+  const [companies, setCompanies] = useState([]);
   const [reportStatusDrafts, setReportStatusDrafts] = useState({});
   const [threadSecretKey, setThreadSecretKey] = useState("");
   const [threadReportId, setThreadReportId] = useState("");
@@ -490,7 +504,16 @@ function App() {
   }
 
   function parseErr(err) {
-    return err?.data?.message || err?.reason || err?.message || "unknown error";
+    const raw = err?.data?.message || err?.reason || err?.error?.message || err?.message || "unknown error";
+    const method = err?.method || "";
+    const code = err?.code || err?.error?.code || "";
+    const noReturnData = err?.data === "0x" || raw.includes('data="0x"');
+    if ((code === "CALL_EXCEPTION" || raw.includes("CALL_EXCEPTION")) && noReturnData) {
+      return lang === "zh"
+        ? `讀取合約失敗${method ? `（${method}）` : ""}：目前 RPC 上的合約地址沒有回傳資料。請確認 .env 的 VITE_CONTRACT_ADDRESS 是最新部署地址，且控制面板的 RPC / MetaMask 在同一條鏈。`
+        : `Contract read failed${method ? ` (${method})` : ""}: the current RPC returned no data for this contract address. Check VITE_CONTRACT_ADDRESS and make sure RPC / MetaMask use the same chain.`;
+    }
+    return raw;
   }
 
   async function withLoading(key, fn) {
@@ -513,6 +536,13 @@ function App() {
   function getBurnerProvider() { return new ethers.providers.JsonRpcProvider(burnerRpcUrl.trim() || LOCAL_RPC_URL); }
   function getReadProvider() { return getBurnerProvider(); }
   function getReadContract() { return new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getReadProvider()); }
+  function getReadContracts() {
+    const contracts = [getReadContract()];
+    if (window.ethereum) {
+      contracts.push(new ethers.Contract(CONTRACT_ADDRESS, appArtifact.abi, getProvider()));
+    }
+    return contracts;
+  }
   function reportStatusLabel(status) {
     const labels = lang === "zh"
       ? ["已送出", "審查中", "已確認", "已駁回", "已結案"]
@@ -781,17 +811,38 @@ function App() {
   }
 
   async function loadMembersFromEvents() {
-    const c = getReadContract();
-    const addFilter = reportGroupId ? c.filters.EmployeeMemberAdded(reportGroupId, null) : c.filters.EmployeeMemberAdded();
-    const removeFilter = reportGroupId ? c.filters.EmployeeMemberRemoved(reportGroupId, null) : c.filters.EmployeeMemberRemoved();
-    const [addLogs, removeLogs] = await Promise.all([
-      c.queryFilter(addFilter, 0, "latest"),
-      c.queryFilter(removeFilter, 0, "latest")
-    ]);
+    const targetReportGroupId = reportGroupId.trim();
+    let addLogs = [];
+    let removeLogs = [];
+    let lastError = null;
+    for (const c of getReadContracts()) {
+      try {
+        const addFilter = targetReportGroupId ? c.filters.EmployeeMemberAdded(targetReportGroupId, null) : c.filters.EmployeeMemberAdded();
+        const removeFilter = targetReportGroupId ? c.filters.EmployeeMemberRemoved(targetReportGroupId, null) : c.filters.EmployeeMemberRemoved();
+        [addLogs, removeLogs] = await Promise.all([
+          c.queryFilter(addFilter, 0, "latest"),
+          c.queryFilter(removeFilter, 0, "latest")
+        ]);
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (!addLogs.length && lastError) {
+      const msg = parseErr(lastError);
+      if (msg.includes("讀取合約失敗") || msg.includes("Contract read failed")) throw new Error(msg);
+    }
     const events = [
       ...addLogs.map((log) => ({ log, type: "add" })),
       ...removeLogs.map((log) => ({ log, type: "remove" }))
     ].sort((a, b) => (a.log.blockNumber - b.log.blockNumber) || (a.log.logIndex - b.log.logIndex));
+    if (!events.length && targetReportGroupId && membersReportGroupId === targetReportGroupId && members.length > 0) {
+      setStatus(lang === "zh"
+        ? `事件查詢沒有回傳新資料，保留目前本機已同步的 ${members.length} 位成員。若重新整理後歸零，請確認 RPC 與 MetaMask 是否在同一條鏈。`
+        : `Event query returned no logs; keeping ${members.length} locally synced members. If this resets after refresh, check that RPC and MetaMask use the same chain.`);
+      pushToast("success", lang === "zh" ? `保留目前 ${members.length} 位成員` : `Keeping ${members.length} current members`);
+      return members;
+    }
     const current = [];
     for (const event of events) {
       const commitment = event.log.args.identityCommitment.toString();
@@ -801,8 +852,8 @@ function App() {
     }
     const list = current;
     setMembers(list);
-    setMembersReportGroupId(reportGroupId.trim() || "all");
-    setStatus(`Loaded ${list.length} members for reportGroupId=${reportGroupId || "all"}`);
+    setMembersReportGroupId(targetReportGroupId || "all");
+    setStatus(`Loaded ${list.length} members for reportGroupId=${targetReportGroupId || "all"}`);
     pushToast("success", lang === "zh" ? `已載入 ${list.length} 位群組成員` : `Loaded ${list.length} group members`);
     return list;
   }
@@ -852,11 +903,17 @@ function App() {
     if (!commitment) throw new Error("Please enter employee commitment");
     if (!reportGroupId.trim()) throw new Error("Please enter reportGroupId");
     const tx = await getSignerContract().addEmployeeMember(reportGroupId.trim(), commitment);
-    await tx.wait();
+    const receipt = await tx.wait();
+    const evt = receipt.events?.find((e) => e.event === "EmployeeMemberAdded");
+    if (!evt) {
+      throw new Error(lang === "zh"
+        ? "交易已送出但沒有收到 EmployeeMemberAdded 事件，請確認合約版本與前端 ABI 是否一致。"
+        : "Transaction completed but EmployeeMemberAdded event was not found. Check contract version and frontend ABI.");
+    }
     setMembers((prev) => (membersReportGroupId === reportGroupId.trim() && !prev.includes(commitment) ? [...prev, commitment] : prev));
     setMembersReportGroupId(reportGroupId.trim());
-    setStatus("Employee added");
-    pushToast("success", "Employee added");
+    setStatus(lang === "zh" ? `員工已加入 reportGroupId=${reportGroupId.trim()}` : `Employee added to reportGroupId=${reportGroupId.trim()}`);
+    pushToast("success", lang === "zh" ? "員工已加入，已同步本機成員列表" : "Employee added and local member list synced");
   }
 
   async function adminRemoveEmployee() {
@@ -1123,16 +1180,90 @@ function App() {
     return list;
   }
 
+  async function loadAllCompanies() {
+    const c = getReadContract();
+    const companyMap = new Map();
+    try {
+      const total = Number((await c.companyCount()).toString());
+      for (let i = 1; i <= total; i++) {
+        const company = await c.companies(i);
+        if (!company.id || company.id.toString() === "0") continue;
+        companyMap.set(company.id.toString(), {
+          id: company.id.toString(),
+          companyName: company.companyName,
+          adminAddress: company.adminAddress,
+          adminPublicKey: company.adminPublicKey,
+          active: company.active
+        });
+      }
+    } catch (error) {
+      const msg = parseErr(error);
+      if (msg.includes("讀取合約失敗") || msg.includes("Contract read failed")) {
+        const eventContract = getReadContracts()[0];
+        const logs = await eventContract.queryFilter(eventContract.filters.CompanyCreated(), 0, "latest");
+        for (const log of logs) {
+          const id = log.args.companyId.toString();
+          companyMap.set(id, {
+            id,
+            companyName: log.args.companyName,
+            adminAddress: log.args.adminAddress,
+            adminPublicKey: "",
+            active: true
+          });
+        }
+      } else {
+        throw error;
+      }
+    }
+    const list = [...companyMap.values()].sort((a, b) => Number(a.id) - Number(b.id));
+    setCompanies(list);
+    setStatus(lang === "zh" ? `已載入 ${list.length} 間公司` : `Loaded ${list.length} companies`);
+    pushToast("success", lang === "zh" ? `已載入 ${list.length} 間公司` : `Loaded ${list.length} companies`);
+    return list;
+  }
+
   async function loadCompanyReportGroups() {
     if (!companyId.trim()) {
       throw new Error(lang === "zh" ? "請先填寫公司 ID" : "Please enter companyId first");
     }
 
     const c = getReadContract();
-    const [groupTotal, reportTotal] = await Promise.all([
-      c.reportGroupCount(),
-      c.reportCount()
-    ]);
+    let groupIds = [];
+    let reportTotal;
+    const groupEventDetails = new Map();
+    try {
+      const [groupTotalResult, reportTotalResult] = await Promise.all([
+        c.reportGroupCount(),
+        c.reportCount()
+      ]);
+      groupIds = Array.from({ length: Number(groupTotalResult.toString()) }, (_, index) => index + 1);
+      reportTotal = reportTotalResult;
+    } catch (error) {
+      const msg = parseErr(error);
+      if (!msg.includes("讀取合約失敗") && !msg.includes("Contract read failed")) throw error;
+      const eventContract = getReadContracts()[0];
+      const logs = await eventContract.queryFilter(eventContract.filters.ReportGroupCreated(null, companyId.trim()), 0, "latest");
+      for (const log of logs) {
+        const id = log.args.reportGroupId.toString();
+        groupEventDetails.set(id, {
+          id,
+          companyId: log.args.companyId.toString(),
+          topicName: log.args.topicName,
+          maxReportsPerMember: "-",
+          startTime: 0,
+          endTime: 0,
+          semaphoreGroupId: log.args.semaphoreGroupId.toString(),
+          active: true,
+          reportCount: 0
+        });
+      }
+      groupIds = [...new Set(logs.map((log) => Number(log.args.reportGroupId.toString())))].sort((a, b) => a - b);
+      try {
+        reportTotal = await c.reportCount();
+      } catch {
+        reportTotal = ethers.BigNumber.from(0);
+      }
+    }
     const reportCounts = {};
     for (let i = 1; i <= Number(reportTotal.toString()); i++) {
       const r = await c.reports(i);
@@ -1141,20 +1272,29 @@ function App() {
     }
 
     const groups = [];
-    for (let i = 1; i <= Number(groupTotal.toString()); i++) {
-      const rg = await c.reportGroups(i);
-      if (rg.companyId.toString() !== companyId.trim()) continue;
-      groups.push({
-        id: rg.id.toString(),
-        companyId: rg.companyId.toString(),
-        topicName: rg.topicName,
-        maxReportsPerMember: rg.maxReportsPerMember.toString(),
-        startTime: Number(rg.startTime),
-        endTime: Number(rg.endTime),
-        semaphoreGroupId: rg.semaphoreGroupId.toString(),
-        active: rg.active,
-        reportCount: reportCounts[rg.id.toString()] || 0
-      });
+    for (const id of groupIds) {
+      try {
+        const rg = await c.reportGroups(id);
+        if (rg.companyId.toString() !== companyId.trim()) continue;
+        groups.push({
+          id: rg.id.toString(),
+          companyId: rg.companyId.toString(),
+          topicName: rg.topicName,
+          maxReportsPerMember: rg.maxReportsPerMember.toString(),
+          startTime: Number(rg.startTime),
+          endTime: Number(rg.endTime),
+          semaphoreGroupId: rg.semaphoreGroupId.toString(),
+          active: rg.active,
+          reportCount: reportCounts[rg.id.toString()] || 0
+        });
+      } catch (error) {
+        const fallback = groupEventDetails.get(String(id));
+        if (fallback) {
+          groups.push({ ...fallback, reportCount: reportCounts[String(id)] || 0 });
+        } else {
+          throw error;
+        }
+      }
     }
     setCompanyReportGroups(groups);
     setStatus(lang === "zh" ? `已載入公司 ${companyId.trim()} 的 ${groups.length} 個舉報主題` : `Loaded ${groups.length} report groups for company ${companyId.trim()}`);
@@ -1328,8 +1468,84 @@ function App() {
     setReporterReplyText("");
   }
 
+  const roleViews = {
+    saasAdmin: {
+      icon: "◇",
+      title: t.saasAdmin,
+      eyebrow: lang === "zh" ? "平台營運視角" : "Platform operator",
+      description: lang === "zh"
+        ? "建立公司租戶，維持聯盟鏈平台治理入口。"
+        : "Onboard company tenants and operate the consortium platform.",
+      primary: lang === "zh" ? "公司建立" : "Company onboarding",
+      accent: "amber"
+    },
+    admin: {
+      icon: "◆",
+      title: t.admin,
+      eyebrow: lang === "zh" ? "公司處理單位" : "Company workspace",
+      description: lang === "zh"
+        ? "建立舉報主題、管理員工資格、解密與處理案件。"
+        : "Create report topics, manage membership, decrypt, and review cases.",
+      primary: lang === "zh" ? "案件處理" : "Case operations",
+      accent: "blue"
+    },
+    employee: {
+      icon: "●",
+      title: t.employee,
+      eyebrow: lang === "zh" ? "匿名舉報者" : "Anonymous reporter",
+      description: lang === "zh"
+        ? "產生匿名憑證、加密舉報、保存 thread key 後匿名追蹤。"
+        : "Prepare anonymous credentials, encrypt reports, and follow up privately.",
+      primary: lang === "zh" ? "匿名提交" : "Anonymous submit",
+      accent: "green"
+    }
+  };
+  const currentRole = roleViews[activeTab];
+  const connectionState = wallet
+    ? (lang === "zh" ? "錢包已連接" : "Wallet connected")
+    : (lang === "zh" ? "錢包未連接" : "Wallet not connected");
+  const contractState = CONTRACT_ADDRESS
+    ? (lang === "zh" ? "合約已設定" : "Contract configured")
+    : (lang === "zh" ? "合約未設定" : "Contract missing");
+  const isWorking = Object.values(loading).some(Boolean) || proofArtifactsStatus.startsWith("loading");
+  const assistantStatus = status || (lang === "zh" ? "我會在這裡同步顯示目前執行狀態。" : "I will show the current execution status here.");
+
+  function clampBotPosition(x, y) {
+    if (typeof window === "undefined") return { x, y };
+    const maxX = Math.max(16, window.innerWidth - 330);
+    const maxY = Math.max(16, window.innerHeight - 150);
+    return {
+      x: Math.min(Math.max(16, x), maxX),
+      y: Math.min(Math.max(16, y), maxY)
+    };
+  }
+
+  function startBotDrag(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    botDragOffset.current = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top
+    };
+    setBotDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function moveBot(event) {
+    if (!botDragging) return;
+    setBotPosition(clampBotPosition(
+      event.clientX - botDragOffset.current.x,
+      event.clientY - botDragOffset.current.y
+    ));
+  }
+
+  function endBotDrag(event) {
+    setBotDragging(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }
+
   const Btn = ({ label, k, onClick, primary = false, disabled = false }) => (
     <button
+      className={`action-button ${primary ? "action-button--primary" : ""}`}
       style={{
         border: "1px solid " + (primary ? "#1d4ed8" : "#cbd5e1"),
         background: primary ? "#2563eb" : "#fff",
@@ -1348,19 +1564,47 @@ function App() {
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f3f6fb", padding: 16 }}>
-      <div style={{ position: "fixed", right: 16, top: 16, zIndex: 9999, display: "grid", gap: 8 }}>
+    <div className={`app-redesign role-${activeTab}`} style={{ minHeight: "100vh", background: "#f3f6fb", padding: 16 }}>
+      <div className="toast-stack" style={{ position: "fixed", right: 16, top: 16, zIndex: 9999, display: "grid", gap: 8 }}>
         {toasts.map((x) => (
-          <div key={x.id} style={{ minWidth: 280, maxWidth: 420, borderRadius: 10, border: "1px solid " + (x.kind === "success" ? "#86efac" : "#fca5a5"), background: x.kind === "success" ? "#f0fdf4" : "#fef2f2", color: x.kind === "success" ? "#166534" : "#991b1b", padding: "10px 12px" }}>
+          <div key={x.id} className={`toast-card toast-card--${x.kind}`} style={{ minWidth: 280, maxWidth: 420, borderRadius: 10, border: "1px solid " + (x.kind === "success" ? "#86efac" : "#fca5a5"), background: x.kind === "success" ? "#f0fdf4" : "#fef2f2", color: x.kind === "success" ? "#166534" : "#991b1b", padding: "10px 12px" }}>
             <strong>{x.kind === "success" ? ui.success : ui.error}</strong>
             <div>{x.msg}</div>
           </div>
         ))}
       </div>
 
+      <div
+        className={`floating-assistant ${botDragging ? "is-dragging" : ""} ${isWorking ? "is-working" : ""}`}
+        style={{ left: botPosition.x, top: botPosition.y }}
+        onPointerDown={startBotDrag}
+        onPointerMove={moveBot}
+        onPointerUp={endBotDrag}
+        onPointerCancel={endBotDrag}
+        role="status"
+        aria-live="polite"
+        title={lang === "zh" ? "拖曳我到喜歡的位置" : "Drag me anywhere you like"}
+      >
+        <div className="assistant-bubble">
+          <div className="assistant-bubble__topline">
+            <span className="assistant-live-dot" />
+            {isWorking ? (lang === "zh" ? "執行中" : "Working") : (lang === "zh" ? "系統助理" : "System assistant")}
+          </div>
+          <div className="assistant-bubble__message">{assistantStatus}</div>
+        </div>
+        <div className="assistant-bot" aria-hidden="true">
+          <div className="assistant-bot__antenna" />
+          <div className="assistant-bot__face">
+            <span />
+            <span />
+          </div>
+          <div className="assistant-bot__body" />
+        </div>
+      </div>
+
       {showHelp ? (
-        <div style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(15, 23, 42, 0.42)", display: "grid", placeItems: "center", padding: 18 }}>
-          <div style={{ width: "min(860px, 100%)", maxHeight: "86vh", overflow: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 24px 60px rgba(15, 23, 42, 0.22)" }}>
+        <div className="modal-backdrop" style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(15, 23, 42, 0.42)", display: "grid", placeItems: "center", padding: 18 }}>
+          <div className="help-modal" style={{ width: "min(860px, 100%)", maxHeight: "86vh", overflow: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, boxShadow: "0 24px 60px rgba(15, 23, 42, 0.22)" }}>
             <div style={{ position: "sticky", top: 0, background: "#fff", borderBottom: "1px solid #e5e7eb", padding: 14, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
               <h2 style={{ margin: 0 }}>{helpCopy.title}</h2>
               <button onClick={() => setShowHelp(false)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "7px 10px", background: "#fff", cursor: "pointer" }}>
@@ -1398,14 +1642,22 @@ function App() {
         </div>
       ) : null}
 
-      <div style={{ maxWidth: 1320, margin: "0 auto", border: "1px solid #e2e8f0", borderRadius: 14, background: "#fff", overflow: "hidden" }}>
-        <div style={{ padding: 16, borderBottom: "1px solid #e5e7eb", display: "flex", gap: 12, justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
+      <div className="product-frame" style={{ maxWidth: 1320, margin: "0 auto", border: "1px solid #e2e8f0", borderRadius: 14, background: "#fff", overflow: "hidden" }}>
+        <div className="product-hero" style={{ padding: 16, borderBottom: "1px solid #e5e7eb", display: "flex", gap: 12, justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div className="hero-copy">
+            <div className="hero-kicker">{currentRole.eyebrow}</div>
             <h1 style={{ margin: 0 }}>{t.title}</h1>
-            <div style={{ marginTop: 6, color: "#475569" }}>Contract: {CONTRACT_ADDRESS || "(set VITE_CONTRACT_ADDRESS)"}</div>
-            <div style={{ marginTop: 2, color: "#475569" }}>Wallet: {wallet || "(not connected)"}</div>
+            <p className="hero-description">{currentRole.description}</p>
+            <div className="hero-pills">
+              <span className={`status-pill ${CONTRACT_ADDRESS ? "is-good" : "is-warn"}`}>{contractState}</span>
+              <span className={`status-pill ${wallet ? "is-good" : "is-muted"}`}>{connectionState}</span>
+              <span className="status-pill is-muted">CID via Private IPFS</span>
+            </div>
+            <div className="hero-meta">Contract: {CONTRACT_ADDRESS || "(set VITE_CONTRACT_ADDRESS)"}</div>
+            <div className="hero-meta">Wallet: {wallet || "(not connected)"}</div>
           </div>
           <button
+            className="help-button"
             onClick={() => setShowHelp(true)}
             style={{ border: "1px solid #cbd5e1", borderRadius: 999, padding: "8px 12px", background: "#111827", color: "#fff", cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}
           >
@@ -1413,22 +1665,22 @@ function App() {
           </button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: showPanel ? "340px 1fr" : "70px 1fr", minHeight: "calc(100vh - 150px)", transition: "grid-template-columns .2s ease" }}>
-          <aside style={{ borderRight: "1px solid #e5e7eb", padding: 12, background: "#f8fafc" }}>
+        <div className="workspace-grid" style={{ display: "grid", gridTemplateColumns: showPanel ? "340px 1fr" : "70px 1fr", minHeight: "calc(100vh - 150px)", transition: "grid-template-columns .2s ease" }}>
+          <aside className="control-panel" style={{ borderRight: "1px solid #e5e7eb", padding: 12, background: "#f8fafc" }}>
             <div style={{ display: "flex", justifyContent: showPanel ? "space-between" : "center", marginBottom: 10 }}>
               {showPanel ? <strong>{t.control}</strong> : null}
               <button onClick={() => setShowPanel((v) => !v)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", background: "#fff", cursor: "pointer" }}>{showPanel ? ui.collapse : ui.expand}</button>
             </div>
             {showPanel ? (
               <>
-                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10, marginBottom: 10 }}>
+                <div className="control-card" style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10, marginBottom: 10 }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Btn label={t.connect} k="connect" onClick={connectWallet} primary />
                     <Btn label={t.local} k="local" onClick={switchToLocal} />
                     <Btn label={t.amoy} k="amoy" onClick={switchToAmoy} />
                   </div>
                 </div>
-                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10, marginBottom: 10 }}>
+                <div className="control-card" style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10, marginBottom: 10 }}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Btn label={t.check} k="check" onClick={checkContractHealth} disabled={!canRead} />
                     <Btn label={t.ipfsCheck} k="ipfsCheck" onClick={checkIpfsHealth} />
@@ -1438,7 +1690,7 @@ function App() {
                   <Field label={ui.labels.ipfsGateway} hint={ui.examples.ipfsGateway} value={ipfsGateway} onChange={(e) => setIpfsGateway(e.target.value)} placeholder="e.g. http://127.0.0.1:8080" style={{ marginTop: 10 }} />
                   <div style={{ marginTop: 10, fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#334155", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{diag || "Diag: -"}</div>
                 </div>
-                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10 }}>
+                <div className="control-card" style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10 }}>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => setLang("zh")} style={{ border: "1px solid #cbd5e1", borderRadius: 999, padding: "6px 10px", background: lang === "zh" ? "#111827" : "#fff", color: lang === "zh" ? "#fff" : "#111827", cursor: "pointer" }}>中文</button>
                     <button onClick={() => setLang("en")} style={{ border: "1px solid #cbd5e1", borderRadius: 999, padding: "6px 10px", background: lang === "en" ? "#111827" : "#fff", color: lang === "en" ? "#fff" : "#111827", cursor: "pointer" }}>English</button>
@@ -1448,11 +1700,22 @@ function App() {
             ) : null}
           </aside>
 
-          <main style={{ padding: 16 }}>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <button onClick={() => setActiveTab("saasAdmin")} style={{ border: "1px solid #cbd5e1", borderRadius: 999, padding: "8px 12px", background: activeTab === "saasAdmin" ? "#111827" : "#fff", color: activeTab === "saasAdmin" ? "#fff" : "#111827", cursor: "pointer", fontWeight: 700 }}>{t.saasAdmin}</button>
-              <button onClick={() => setActiveTab("admin")} style={{ border: "1px solid #cbd5e1", borderRadius: 999, padding: "8px 12px", background: activeTab === "admin" ? "#111827" : "#fff", color: activeTab === "admin" ? "#fff" : "#111827", cursor: "pointer", fontWeight: 700 }}>{t.admin}</button>
-              <button onClick={() => setActiveTab("employee")} style={{ border: "1px solid #cbd5e1", borderRadius: 999, padding: "8px 12px", background: activeTab === "employee" ? "#111827" : "#fff", color: activeTab === "employee" ? "#fff" : "#111827", cursor: "pointer", fontWeight: 700 }}>{t.employee}</button>
+          <main className="role-workspace" style={{ padding: 16 }}>
+            <div className="role-switcher" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              {Object.entries(roleViews).map(([key, role]) => (
+                <button
+                  key={key}
+                  className={`role-card role-card--${role.accent} ${activeTab === key ? "is-active" : ""}`}
+                  onClick={() => setActiveTab(key)}
+                  style={{ border: "1px solid #cbd5e1", borderRadius: 999, padding: "8px 12px", background: activeTab === key ? "#111827" : "#fff", color: activeTab === key ? "#fff" : "#111827", cursor: "pointer", fontWeight: 700 }}
+                >
+                  <span className="role-card__icon">{role.icon}</span>
+                  <span>
+                    <strong>{role.title}</strong>
+                    <small>{role.primary}</small>
+                  </span>
+                </button>
+              ))}
             </div>
 
             {activeTab === "saasAdmin" ? (
@@ -1462,8 +1725,36 @@ function App() {
                   <p style={{ color: "#64748b", marginTop: 0 }}>{ui.saasIntro}</p>
                   <Field label={ui.labels.companyId} hint={ui.examples.companyId} value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="e.g. 2" />
                   <Field label={ui.labels.newCompanyName} hint={ui.examples.newCompanyName} value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. TSMC" />
-                  <div style={{ marginBottom: 12 }}><Btn label={t.createCompany} k="createCompany" onClick={adminCreateCompany} disabled={!canUse} /></div>
+                  <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Btn label={t.createCompany} k="createCompany" onClick={adminCreateCompany} disabled={!canUse} />
+                    <Btn label={lang === "zh" ? "查詢所有公司" : "Load Companies"} k="loadCompanies" onClick={loadAllCompanies} disabled={!canRead} />
+                  </div>
                   <div style={{ marginTop: 8, fontSize: 13, color: "#64748b" }}>companyId: {companyId || "-"}</div>
+                  {companies.length > 0 ? (
+                    <div className="company-directory">
+                      <div className="company-directory__header">
+                        <span>ID</span>
+                        <span>{lang === "zh" ? "公司名稱" : "Company"}</span>
+                        <span>{lang === "zh" ? "Admin 地址" : "Admin address"}</span>
+                        <span>{lang === "zh" ? "狀態" : "Status"}</span>
+                      </div>
+                      {companies.map((company) => (
+                        <button
+                          type="button"
+                          key={company.id}
+                          className="company-directory__row"
+                          onClick={() => setCompanyId(company.id)}
+                        >
+                          <span>{company.id}</span>
+                          <span>{company.companyName || "-"}</span>
+                          <code>{company.adminAddress || "-"}</code>
+                          <span>{company.active ? (lang === "zh" ? "啟用" : "Active") : (lang === "zh" ? "停用" : "Inactive")}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <HelpText>{lang === "zh" ? "建立公司後可按「查詢所有公司」確認 companyId 與 Admin 地址。" : "After creating companies, click Load Companies to confirm companyId and Admin address."}</HelpText>
+                  )}
                 </div>
               </div>
             ) : activeTab === "admin" ? (
@@ -1534,86 +1825,121 @@ function App() {
                     </div>
                   ) : null}
                   <HelpText>{lang === "zh" ? `目前列表：${reports.length} 筆。可先查公司主題，再點選表格中的主題 ID 查指定主題舉報。` : `Current list: ${reports.length} reports. Load company groups first, then click a group row to filter reports by group.`}</HelpText>
-                  {reports.length === 0 ? <div>{ui.noReports}</div> : reports.map((r) => (
-                    <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginBottom: 8, overflowWrap: "anywhere" }}>
-                      <div><strong>#{r.id}</strong> | {new Date(r.timestamp * 1000).toLocaleString()}</div>
-                      <div>companyId: {r.companyId} | reportGroupId: {r.reportGroupId}</div>
-                      <div>period: {r.period} | slot: {r.reportSlot}</div>
-                      <div>ipfsCID: {r.ipfsCID}</div>
-                      <div>messageHash: {r.messageHash}</div>
-                      <div>{t.status}: {reportStatusLabel(r.status)}{r.statusNote ? ` | ${lang === "zh" ? "備註" : "note"}: ${r.statusNote}` : ""}</div>
-                      <div>nullifier: {r.nullifier}</div>
-                      <div>scope: {r.scope}</div>
-                      <div>sender: {r.submittedBy}</div>
-                      <div>{ui.encrypted}: {r.encryptedReport ? `${r.encryptedReport.slice(0, 80)}...` : `(${lang === "zh" ? "可用 ipfsCID 讀取" : "fetch by ipfsCID"})`}</div>
-                      <div style={{ marginTop: 6 }}><Btn label={t.decrypt} k={`decrypt_${r.id}`} onClick={() => decryptOne(r.id)} disabled={!canUse} /></div>
-                      <div style={{ display: "grid", gridTemplateColumns: "160px 1fr auto", gap: 8, marginTop: 8 }}>
-                        <label style={{ display: "block" }}>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 5 }}>{t.status}</div>
-                          <select
-                            value={reportStatusDrafts[r.id]?.status ?? r.status}
-                            onChange={(e) => setReportStatusDrafts((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), status: e.target.value } }))}
-                            style={{ width: "100%", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px" }}
-                          >
-                            <option value="0">{lang === "zh" ? "已送出" : "Submitted"}</option>
-                            <option value="1">{lang === "zh" ? "審查中" : "Reviewing"}</option>
-                            <option value="2">{lang === "zh" ? "已確認" : "Confirmed"}</option>
-                            <option value="3">{lang === "zh" ? "已駁回" : "Rejected"}</option>
-                            <option value="4">{lang === "zh" ? "已結案" : "Closed"}</option>
-                          </select>
-                        </label>
-                        <Field
-                          label={ui.labels.statusNote}
-                          hint={ui.examples.statusNote}
-                          value={reportStatusDrafts[r.id]?.note ?? r.statusNote}
-                          onChange={(e) => setReportStatusDrafts((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), note: e.target.value } }))}
-                          placeholder={lang === "zh" ? "例如：已進入調查" : "e.g. moved to investigation"}
-                          style={{ marginBottom: 0 }}
-                        />
-                        <Btn label={t.updateStatus} k={`status_${r.id}`} onClick={() => updateReportStatus(r.id)} disabled={!canUse} />
-                      </div>
-                      <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{ui.plain}: {r.plainText || `(${ui.notDecrypted})`}</div>
-                      <div style={{ marginTop: 10, borderTop: "1px solid #e5e7eb", paddingTop: 10 }}>
-                        <div style={{ fontWeight: 700, marginBottom: 6 }}>{ui.anonymousThreadTitle}</div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                          <Btn label={t.loadThread} k={`loadThread_${r.id}`} onClick={() => loadReportMessages(String(r.id))} disabled={!canRead} />
-                          <Btn label={t.decryptThread} k={`decryptThread_${r.id}`} onClick={() => decryptThreadMessages(String(r.id), r.threadSecretKey)} disabled={!canRead || !r.threadSecretKey} />
-                        </div>
-                        <TextAreaField
-                          label={ui.labels.adminReply}
-                          hint={ui.examples.adminReply}
-                          value={adminReplyDrafts[r.id] || ""}
-                          onChange={(e) => setAdminReplyDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                          placeholder={lang === "zh" ? "例如：請補充發生日期與佐證" : "e.g. please provide date and evidence"}
-                          height={72}
-                        />
-                        <div style={{ marginTop: 8 }}><Btn label={t.sendReply} k={`adminReply_${r.id}`} onClick={() => adminSendReply(r.id)} disabled={!CONTRACT_ADDRESS || !r.threadSecretKey} /></div>
-                        {!r.threadSecretKey ? <HelpText>{lang === "zh" ? "請先按「解密」取得此案件 thread key，才能送出 Admin 回覆。" : "Decrypt this report first to recover the thread key before sending an Admin reply."}</HelpText> : null}
-                        {(threadMessages[String(r.id)] || []).length > 0 ? (
-                          <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                            {(threadMessages[String(r.id)] || []).map((m) => (
-                              <div key={m.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
-                                <div>message #{m.id} | {m.senderRole === 1 ? "Admin" : "Reporter"} | {new Date(m.timestamp * 1000).toLocaleString()}</div>
-                                <div>cid: {m.ipfsCID}</div>
-                                <div>hash: {m.contentHash}</div>
-                                <div style={{ whiteSpace: "pre-wrap" }}>{ui.plain}: {m.plainText || `(${ui.encryptedOnly})`}</div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
+                  {reports.length === 0 ? (
+                    <div className="empty-inbox">
+                      <div className="empty-inbox__icon">◎</div>
+                      <strong>{ui.noReports}</strong>
+                      <span>{lang === "zh" ? "請先查詢本公司或指定主題的舉報案件。" : "Load company or group reports to start reviewing cases."}</span>
                     </div>
-                  ))}
+                  ) : (
+                    <div className="case-inbox">
+                      {reports.map((r) => (
+                        <article key={r.id} className={`case-card case-card--status-${r.status}`}>
+                          <div className="case-card__summary">
+                            <div className="case-id">#{r.id}</div>
+                            <span className="case-status-badge">{reportStatusLabel(r.status)}</span>
+                            <h4>{lang === "zh" ? "匿名舉報案件" : "Anonymous report case"}</h4>
+                            <div className="case-time">{new Date(r.timestamp * 1000).toLocaleString()}</div>
+                            <div className="case-chip-grid">
+                              <span>Company {r.companyId}</span>
+                              <span>Group {r.reportGroupId}</span>
+                              <span>{r.period || "-"}</span>
+                              <span>slot {r.reportSlot || "-"}</span>
+                            </div>
+                          </div>
+                          <div className="case-card__body">
+                            <div className="case-section-title">
+                              <span>{lang === "zh" ? "鏈上證據摘要" : "On-chain evidence"}</span>
+                              <small>{lang === "zh" ? "可驗證，但不揭露舉報者身份" : "Verifiable without revealing reporter identity"}</small>
+                            </div>
+                            <div className="case-metadata">
+                              <div><span>IPFS CID</span><code>{r.ipfsCID}</code></div>
+                              <div><span>content hash</span><code>{r.messageHash}</code></div>
+                              <div><span>nullifier</span><code>{r.nullifier}</code></div>
+                              <div><span>scope</span><code>{r.scope}</code></div>
+                              <div><span>sender</span><code>{r.submittedBy}</code></div>
+                            </div>
+                            <div className="case-action-row">
+                              <Btn label={t.decrypt} k={`decrypt_${r.id}`} onClick={() => decryptOne(r.id)} disabled={!canUse} />
+                              <Btn label={t.loadThread} k={`loadThread_${r.id}`} onClick={() => loadReportMessages(String(r.id))} disabled={!canRead} />
+                              <Btn label={t.decryptThread} k={`decryptThread_${r.id}`} onClick={() => decryptThreadMessages(String(r.id), r.threadSecretKey)} disabled={!canRead || !r.threadSecretKey} />
+                            </div>
+                            <div className="case-plain-panel">
+                              <div className="case-section-title">
+                                <span>{ui.plain}</span>
+                                <small>{r.plainText ? (lang === "zh" ? "已由 Admin 私鑰解密" : "Decrypted by Admin key") : (lang === "zh" ? "尚未解密" : "Not decrypted")}</small>
+                              </div>
+                              <pre>{r.plainText || `(${ui.notDecrypted})`}</pre>
+                            </div>
+                            <div className="case-status-editor">
+                              <label>
+                                <span>{t.status}</span>
+                                <select
+                                  value={reportStatusDrafts[r.id]?.status ?? r.status}
+                                  onChange={(e) => setReportStatusDrafts((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), status: e.target.value } }))}
+                                >
+                                  <option value="0">{lang === "zh" ? "已送出" : "Submitted"}</option>
+                                  <option value="1">{lang === "zh" ? "審查中" : "Reviewing"}</option>
+                                  <option value="2">{lang === "zh" ? "已確認" : "Confirmed"}</option>
+                                  <option value="3">{lang === "zh" ? "已駁回" : "Rejected"}</option>
+                                  <option value="4">{lang === "zh" ? "已結案" : "Closed"}</option>
+                                </select>
+                              </label>
+                              <Field
+                                label={ui.labels.statusNote}
+                                hint={ui.examples.statusNote}
+                                value={reportStatusDrafts[r.id]?.note ?? r.statusNote}
+                                onChange={(e) => setReportStatusDrafts((prev) => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), note: e.target.value } }))}
+                                placeholder={lang === "zh" ? "例如：已進入調查" : "e.g. moved to investigation"}
+                                style={{ marginBottom: 0 }}
+                              />
+                              <Btn label={t.updateStatus} k={`status_${r.id}`} onClick={() => updateReportStatus(r.id)} disabled={!canUse} />
+                            </div>
+                            <div className="case-thread-panel">
+                              <div className="case-section-title">
+                                <span>{ui.anonymousThreadTitle}</span>
+                                <small>{lang === "zh" ? "用同一組 thread key 進行匿名雙向溝通" : "Use the same thread key for anonymous follow-up"}</small>
+                              </div>
+                              <TextAreaField
+                                label={ui.labels.adminReply}
+                                hint={ui.examples.adminReply}
+                                value={adminReplyDrafts[r.id] || ""}
+                                onChange={(e) => setAdminReplyDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                                placeholder={lang === "zh" ? "例如：請補充發生日期與佐證" : "e.g. please provide date and evidence"}
+                                height={72}
+                              />
+                              <div className="case-action-row"><Btn label={t.sendReply} k={`adminReply_${r.id}`} onClick={() => adminSendReply(r.id)} disabled={!CONTRACT_ADDRESS || !r.threadSecretKey} /></div>
+                              {!r.threadSecretKey ? <HelpText>{lang === "zh" ? "請先按「解密」取得此案件 thread key，才能送出 Admin 回覆。" : "Decrypt this report first to recover the thread key before sending an Admin reply."}</HelpText> : null}
+                              {(threadMessages[String(r.id)] || []).length > 0 ? (
+                                <div className="thread-message-list">
+                                  {(threadMessages[String(r.id)] || []).map((m) => (
+                                    <div key={m.id} className="thread-message-card">
+                                      <div>message #{m.id} | {m.senderRole === 1 ? "Admin" : "Reporter"} | {new Date(m.timestamp * 1000).toLocaleString()}</div>
+                                      <div>cid: {m.ipfsCID}</div>
+                                      <div>hash: {m.contentHash}</div>
+                                      <pre>{ui.plain}: {m.plainText || `(${ui.encryptedOnly})`}</pre>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
+              <div className="employee-wizard" style={{ display: "grid", gap: 12 }}>
+                <div className="wizard-step" style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>{ui.companyGroupsTitle}</h3>
                   <p style={{ color: "#64748b", marginTop: 0 }}>{ui.companyGroupsIntro}</p>
-                  <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 260px) auto", gap: 8, alignItems: "end", marginBottom: 10 }}>
+                  <div className="wizard-query-row" style={{ display: "grid", gridTemplateColumns: "minmax(180px, 260px) auto", gap: 8, alignItems: "end", marginBottom: 10 }}>
                     <Field label={ui.labels.companyId} hint={ui.examples.companyId} value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="e.g. 2" style={{ marginBottom: 0 }} />
-                    <Btn label={t.loadCompanyGroups} k="loadCompanyGroupsEmployee" onClick={loadCompanyReportGroups} disabled={!canRead} />
+                    <div className="wizard-query-action">
+                      <Btn label={t.loadCompanyGroups} k="loadCompanyGroupsEmployee" onClick={loadCompanyReportGroups} disabled={!canRead} />
+                    </div>
                   </div>
                   {companyReportGroups.length > 0 ? (
                     <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflowX: "auto" }}>
@@ -1638,7 +1964,7 @@ function App() {
                   )}
                 </div>
 
-                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
+                <div className="wizard-step" style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>{ui.step1Title}</h3>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Btn label={t.genIdentity} k="genIdentity" onClick={async () => createIdentity()} />
@@ -1651,7 +1977,7 @@ function App() {
                   <div>{ui.reporterCommitment}: {reporterCommitmentPreview || "-"}</div>
                 </div>
 
-                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
+                <div className="wizard-step" style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>{ui.step2Title}</h3>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                     <Field label={ui.labels.companyId} hint={ui.examples.companyId} value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder="e.g. 2" style={{ marginBottom: 0 }} />
@@ -1678,7 +2004,7 @@ function App() {
                   <TextAreaField label={ui.labels.proofJson} hint={ui.examples.proofJson} value={proofJson} onChange={(e) => setProofJson(e.target.value)} placeholder="e.g. { merkleTreeRoot, nullifier, proof, ... }" height={160} mono />
                 </div>
 
-                <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
+                <div className="wizard-step" style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
                   <h3 style={{ marginTop: 0 }}>{ui.step3Title}</h3>
                   <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginBottom: 10, background: "#f8fafc" }}>
                     <div style={{ fontWeight: 800, marginBottom: 8 }}>{t.burnerMode}</div>
@@ -1809,3 +2135,7 @@ function App() {
 }
 
 export default App;
+
+
+
+
