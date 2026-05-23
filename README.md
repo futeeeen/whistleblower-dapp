@@ -60,6 +60,9 @@ powershell -ExecutionPolicy Bypass -File .\start-project.ps1
 
 What it does:
 
+- installs missing dependencies in `private-ipfs-cluster`, `whistleblower-semaphore`, and `whistleblower-semaphore\frontend`
+- generates local Private IPFS `.env` and `secrets\swarm.key` if they are missing
+- compiles the smart contracts with `npm run compile`
 - starts Private IPFS / IPFS Cluster by running `private-ipfs-cluster\npm start`
 - starts local Hardhat RPC if `http://127.0.0.1:8545` is not running
 - copies `whistleblower-semaphore\frontend\.env.example` to `.env` if needed

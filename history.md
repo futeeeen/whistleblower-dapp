@@ -1,5 +1,13 @@
 ﻿# 專案 Push 修改紀錄
 
+## 2026.05.23_20:27:01
+* 升級根目錄一鍵啟動流程，讓剛 clone 專案的新使用者可直接執行 start-project.bat 進行首次建置。
+* start-project.ps1 新增 node_modules 檢查，會自動為 private-ipfs-cluster、whistleblower-semaphore 與 frontend 執行缺少的 npm install。
+* start-project.ps1 新增 Private IPFS 防呆，若 .env 或 secrets/swarm.key 缺失會自動執行 generate-secrets.ps1；若只缺部分設定，會先備份既有檔案再重新產生。
+* start-project.ps1 新增自動 npm run compile，確保合約在啟動 Hardhat、deploy 與前端前已完成編譯。
+* README 補充一鍵啟動會自動安裝依賴、產生 Private IPFS 設定與編譯合約，降低組員首次建置門檻。
+* 驗證：完成 start-project.ps1 / stop-project.ps1 PowerShell 語法檢查與 whistleblower-semaphore npm run compile；compile 成功但 Hardhat 提示目前 Node.js v19 非建議版本。
+
 ## 2026.05.23_19:26:55
 * 重新設計 PoC 前端使用體驗，將 SaaS Admin、Admin、Employee 三個角色視角整理成更清楚的產品化操作流程。
 * 新增可拖曳的系統助理機器人，將 proof artifacts、credential、送出與查詢等狀態以對話泡泡提示，降低 demo 操作焦慮。
@@ -118,4 +126,5 @@
 * 新增 IPFS 啟動、停止、健康檢查、上傳 encrypted report 的 scripts。
 * 更新根目錄 README，說明主要資料夾、啟動順序、Docker Desktop 與 Private IPFS 操作方式。
 * 更新 whistleblower-semaphore README，說明 Private IPFS、Admin decrypt、metadata 上鏈與 IPFS CID 查詢流程。
+
 

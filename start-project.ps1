@@ -6,6 +6,9 @@ $DappDir = Join-Path $Root "whistleblower-semaphore"
 $FrontendDir = Join-Path $DappDir "frontend"
 $FrontendEnv = Join-Path $FrontendDir ".env"
 $FrontendEnvExample = Join-Path $FrontendDir ".env.example"
+$IpfsEnv = Join-Path $IpfsDir ".env"
+$IpfsSwarmKey = Join-Path $IpfsDir "secrets\swarm.key"
+$IpfsGenerateSecretsScript = Join-Path $IpfsDir "scripts\generate-secrets.ps1"
 $LocalRpcUrl = "http://127.0.0.1:8545"
 $FrontendUrl = "http://127.0.0.1:5173"
 
@@ -72,6 +75,67 @@ function Start-Terminal {
     "-ExecutionPolicy", "Bypass",
     "-Command", $psCommand
   ) -WorkingDirectory $WorkingDirectory
+}
+
+function Invoke-CheckedCommand {
+  param(
+    [string]$WorkingDirectory,
+    [string]$Command,
+    [string]$Description
+  )
+
+  Write-Host $Description
+  Push-Location $WorkingDirectory
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    & cmd.exe /d /c $Command
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+      throw "$Description failed with exit code $exitCode."
+    }
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+    Pop-Location
+  }
+}
+
+function Ensure-NodeModules {
+  param(
+    [string]$WorkingDirectory,
+    [string]$Name
+  )
+
+  $nodeModules = Join-Path $WorkingDirectory "node_modules"
+  if (Test-Path $nodeModules) {
+    Write-Host "$Name dependencies already installed."
+    return
+  }
+
+  Invoke-CheckedCommand -WorkingDirectory $WorkingDirectory -Command "npm install" -Description "Installing $Name dependencies..."
+}
+
+function Ensure-IpfsConfig {
+  if ((Test-Path $IpfsEnv) -and (Test-Path $IpfsSwarmKey)) {
+    Write-Host "Private IPFS config already exists."
+    return
+  }
+
+  if (!(Test-Path $IpfsGenerateSecretsScript)) {
+    throw "IPFS generate-secrets script not found: $IpfsGenerateSecretsScript"
+  }
+
+  Write-Host "Private IPFS .env or swarm.key is missing. Generating local private IPFS secrets..."
+  $backupSuffix = Get-Date -Format "yyyyMMddHHmmss"
+  if (Test-Path $IpfsEnv) {
+    Copy-Item -Path $IpfsEnv -Destination "$IpfsEnv.backup-$backupSuffix"
+    Write-Host "Backed up existing IPFS .env before regenerating secrets."
+  }
+  if (Test-Path $IpfsSwarmKey) {
+    Copy-Item -Path $IpfsSwarmKey -Destination "$IpfsSwarmKey.backup-$backupSuffix"
+    Write-Host "Backed up existing IPFS swarm.key before regenerating secrets."
+  }
+  Invoke-CheckedCommand -WorkingDirectory $IpfsDir -Command "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\generate-secrets.ps1" -Description "Generating Private IPFS secrets..."
 }
 
 function Get-EnvValue {
@@ -164,6 +228,17 @@ function Deploy-LocalContract {
 Write-Host "Whistleblower DApp one-click startup" -ForegroundColor Green
 Write-Host "Root: $Root"
 
+Write-Step "Preparing dependencies for first-time setup"
+Ensure-NodeModules -WorkingDirectory $IpfsDir -Name "Private IPFS"
+Ensure-NodeModules -WorkingDirectory $DappDir -Name "Semaphore DApp"
+Ensure-NodeModules -WorkingDirectory $FrontendDir -Name "Frontend"
+
+Write-Step "Preparing Private IPFS config"
+Ensure-IpfsConfig
+
+Write-Step "Compiling smart contracts"
+Invoke-CheckedCommand -WorkingDirectory $DappDir -Command "npm run compile" -Description "Compiling Semaphore contracts..."
+
 Write-Step "Starting Private IPFS / IPFS Cluster"
 Push-Location $IpfsDir
 try {
@@ -189,7 +264,6 @@ if (!(Test-Path $FrontendEnv)) {
   Write-Host "Created frontend .env from .env.example."
 }
 
-$IpfsEnv = Join-Path $IpfsDir ".env"
 $clusterPassword = Get-EnvValue -Path $IpfsEnv -Key "CLUSTER_API_PASSWORD"
 $frontendClusterPassword = Get-EnvValue -Path $FrontendEnv -Key "VITE_IPFS_CLUSTER_PASSWORD"
 if ($clusterPassword -and !$frontendClusterPassword) {
