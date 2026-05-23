@@ -1,4 +1,18 @@
-# 專案 Push 修改紀錄
+﻿# 專案 Push 修改紀錄
+
+## 2026.05.23_19:26:55
+* 重新設計 PoC 前端使用體驗，將 SaaS Admin、Admin、Employee 三個角色視角整理成更清楚的產品化操作流程。
+* 新增可拖曳的系統助理機器人，將 proof artifacts、credential、送出與查詢等狀態以對話泡泡提示，降低 demo 操作焦慮。
+* 細修 Admin 案件列表為 case inbox 形式，強化案件摘要、metadata、解密、狀態更新與匿名對話操作。
+* 細修 Employee 提交流程為分步 wizard，讓員工依序查詢公司主題、準備匿名身分、產生匿名憑證、加密並送出舉報。
+* 修復查詢公司舉報主題的合約相容問題，避免 reportGroupCount 不存在時出現難懂 CALL_EXCEPTION，改用事件與既有資料回推。
+* 修正 Admin 加入員工後「成功但載入 0 位成員」的體驗問題，加入交易確認、事件讀取與本地狀態同步檢查。
+* SaaS Admin 新增查詢所有公司功能，可列出目前已建立的 companyId、公司名稱與 admin address。
+* 新增根目錄一鍵啟動腳本 start-project.bat / start-project.ps1，自動啟動 Private IPFS、Hardhat、必要時 deploy 合約、同步 frontend .env 並開啟瀏覽器。
+* 修正一鍵啟動 deploy 階段會把 Hardhat Node.js warning 誤判為失敗的問題，並支援解析 Contract address 輸出格式。
+* 新增根目錄一鍵關閉腳本 stop-project.bat / stop-project.ps1，可停止 frontend、Hardhat RPC 與 Private IPFS Docker containers，方便安全收工關機。
+* Employee 查詢所有鏈上舉報時新增案件狀態、狀態備註與狀態更新時間，讓舉報者能看到 Admin 更新後的案件處理進度。
+* README 補充一鍵啟動與一鍵關閉使用方式；完成前端 npm run build 與 PowerShell 腳本語法檢查。
 
 ## 2026.05.21_18:39:30
 * 簡化 Employee 送出流程，移除 MetaMask 錢包送出選項，只保留匿名 burner wallet。
@@ -104,3 +118,4 @@
 * 新增 IPFS 啟動、停止、健康檢查、上傳 encrypted report 的 scripts。
 * 更新根目錄 README，說明主要資料夾、啟動順序、Docker Desktop 與 Private IPFS 操作方式。
 * 更新 whistleblower-semaphore README，說明 Private IPFS、Admin decrypt、metadata 上鏈與 IPFS CID 查詢流程。
+

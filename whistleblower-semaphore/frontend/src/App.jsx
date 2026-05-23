@@ -2085,7 +2085,15 @@ function App() {
                   ) : null}
                   {reports.length > 0 ? reports.map((r) => (
                     <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, marginTop: 8, overflowWrap: "anywhere" }}>
-                      <div><strong>#{r.id}</strong> | {new Date(r.timestamp * 1000).toLocaleString()}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <div><strong>#{r.id}</strong> | {new Date(r.timestamp * 1000).toLocaleString()}</div>
+                        <span className="case-status-badge">{reportStatusLabel(r.status)}</span>
+                      </div>
+                      <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                        <div><strong>{lang === "zh" ? "案件狀態" : "Case status"}:</strong> {reportStatusLabel(r.status)}</div>
+                        <div><strong>{lang === "zh" ? "狀態備註" : "Status note"}:</strong> {r.statusNote || (lang === "zh" ? "尚無備註" : "No note yet")}</div>
+                        <div><strong>{lang === "zh" ? "狀態更新時間" : "Status updated"}:</strong> {r.statusUpdatedAt ? new Date(r.statusUpdatedAt * 1000).toLocaleString() : (lang === "zh" ? "尚未更新" : "Not updated yet")}</div>
+                      </div>
                       <div>companyId: {r.companyId} | reportGroupId: {r.reportGroupId}</div>
                       <div>period: {r.period} | slot: {r.reportSlot}</div>
                       <div>ipfsCID: {r.ipfsCID}</div>

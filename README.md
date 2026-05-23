@@ -40,6 +40,65 @@ Use this flow for the final anonymous employee whistleblower demo:
 6. Employee generates Semaphore proof and submits report metadata.
 7. Admin fetches encrypted content from private IPFS by `ipfsCID` and decrypts with MetaMask.
 
+## One-Click Local Startup
+
+The root folder includes a helper script that starts the local demo with fewer manual steps.
+
+Recommended:
+
+```powershell
+cd C:\futen\政大\3_區塊鏈\final
+.\start-project.bat
+```
+
+Alternative PowerShell command:
+
+```powershell
+cd C:\futen\政大\3_區塊鏈\final
+powershell -ExecutionPolicy Bypass -File .\start-project.ps1
+```
+
+What it does:
+
+- starts Private IPFS / IPFS Cluster by running `private-ipfs-cluster\npm start`
+- starts local Hardhat RPC if `http://127.0.0.1:8545` is not running
+- copies `whistleblower-semaphore\frontend\.env.example` to `.env` if needed
+- syncs `VITE_IPFS_CLUSTER_PASSWORD` from `private-ipfs-cluster\.env` if the frontend value is empty
+- checks whether `VITE_CONTRACT_ADDRESS` has contract code on the local chain
+- runs `npm run deploy:local` only when the frontend contract address is missing or invalid
+- updates `whistleblower-semaphore\frontend\.env` with the deployed contract address
+- starts the frontend dev server
+- opens `http://127.0.0.1:5173` in the browser
+
+Keep the Hardhat and frontend terminals open while using the demo.
+
+If Docker Desktop is not running, the IPFS startup step will try to open/wait for Docker through the existing `private-ipfs-cluster` startup script. If Docker shows a WSL or daemon error, restart Docker Desktop and run `.\start-project.bat` again.
+
+## One-Click Local Shutdown
+
+When you finish the local demo, run:
+
+```powershell
+cd C:\futen\政大\3_區塊鏈\final
+.\stop-project.bat
+```
+
+Alternative PowerShell command:
+
+```powershell
+cd C:\futen\政大\3_區塊鏈\final
+powershell -ExecutionPolicy Bypass -File .\stop-project.ps1
+```
+
+What it does:
+
+- stops the local frontend process on port `5173`
+- stops the local Hardhat RPC process on port `8545`
+- stops Private IPFS / IPFS Cluster through `private-ipfs-cluster\scripts\stop-private-network.ps1`
+- checks whether any `whistleblower-*` Docker containers are still running
+
+After it finishes, you can safely close remaining terminal windows or shut down the computer.
+
 ## 1) Start Private IPFS Server
 
 Open Docker Desktop first. Docker CLI commands only work after Docker Desktop / Docker daemon is running.
