@@ -22,6 +22,7 @@
     <nav class="nav-links">
       <a href="#problem">痛點</a>
       <a href="#journey">流程</a>
+      <a href="#lifecycle">案件閉環</a>
       <a href="#architecture">架構</a>
       <a href="#trust">信任設計</a>
       <a href="#demo">互動 Demo</a>
@@ -111,6 +112,58 @@
       </div>
     </section>
 
+    <section class="section lifecycle" id="lifecycle" data-section>
+      <div class="section-heading reveal">
+        <p class="eyebrow">Case lifecycle</p>
+        <h2>不是只送出舉報，而是完整的案件處理閉環。</h2>
+        <p class="lead">匿名舉報送出後，案件會進入可追蹤的處理流程。公司 Admin 可更新狀態與備註、透過加密 thread 追問；舉報者則能用 reportId 與 thread secret key 查看進度並匿名補充。</p>
+      </div>
+      <div class="lifecycle-board reveal delay-1" aria-label="案件狀態與處理閉環">
+        <div class="lifecycle-track">
+          <article class="lifecycle-step">
+            <span>01</span>
+            <h3>Submitted</h3>
+            <p>合約驗證 ZK proof，鏈上保存 CID、content hash、nullifier 與時間戳。</p>
+          </article>
+          <article class="lifecycle-step">
+            <span>02</span>
+            <h3>Reviewing</h3>
+            <p>Admin 解密 Private IPFS 密文，寫入案件狀態備註並保留 audit trail。</p>
+          </article>
+          <article class="lifecycle-step">
+            <span>03</span>
+            <h3>Confirmed / Rejected</h3>
+            <p>調查結果可被更新上鏈；若資料不足，Admin 可在匿名 thread 追問。</p>
+          </article>
+          <article class="lifecycle-step">
+            <span>04</span>
+            <h3>Closed</h3>
+            <p>案件結案後仍保留不可竄改紀錄，舉報者可查詢最終狀態與備註。</p>
+          </article>
+        </div>
+        <aside class="lifecycle-panel">
+          <div class="case-ticket">
+            <div class="ticket-head">
+              <strong>Case #0248</strong>
+              <span>Reviewing</span>
+            </div>
+            <p>狀態備註：已請調查單位確認附件，等待補充資料。</p>
+            <div class="ticket-meta">
+              <span>reportId</span>
+              <span>thread key</span>
+              <span>status note</span>
+              <span>encrypted reply</span>
+            </div>
+          </div>
+          <ul class="check-list">
+            <li>Reporter 不需暴露身份即可追蹤案件進度。</li>
+            <li>Admin 每次狀態更新都有鏈上紀錄。</li>
+            <li>補充說明與追問用同一把 thread key 加密。</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+
     <section class="section architecture" id="architecture" data-section>
       <div class="section-heading reveal">
         <p class="eyebrow">Architecture</p>
@@ -183,9 +236,10 @@
     <button data-target="hero" class="active" type="button"><span>01</span></button>
     <button data-target="problem" type="button"><span>02</span></button>
     <button data-target="journey" type="button"><span>03</span></button>
-    <button data-target="architecture" type="button"><span>04</span></button>
-    <button data-target="trust" type="button"><span>05</span></button>
-    <button data-target="demo" type="button"><span>06</span></button>
+    <button data-target="lifecycle" type="button"><span>04</span></button>
+    <button data-target="architecture" type="button"><span>05</span></button>
+    <button data-target="trust" type="button"><span>06</span></button>
+    <button data-target="demo" type="button"><span>07</span></button>
   </div>
 
   <script src="./app.js"></script>

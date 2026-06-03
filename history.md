@@ -1,5 +1,12 @@
 ﻿# 專案 Push 修改紀錄
 
+## 2026.06.03_16:34:29
+* product-presentation 新增「案件狀態與處理閉環」區塊，補強平台不只是送出舉報，而是支援 Submitted、Reviewing、Confirmed / Rejected、Closed 的完整案件生命週期。
+* 展示頁新增 Case #0248 狀態卡片，說明 Admin 狀態備註、Reporter 進度查詢、thread secret key 與 encrypted reply 的關係。
+* 更新產品介紹頁導覽列與右側 slide rail，加入案件閉環錨點並重新編排章節順序。
+* 新增 lifecycle timeline 桌面版與手機版樣式，讓案件處理流程在不同螢幕尺寸都能清楚呈現。
+* 驗證：完成 product-presentation 導覽錨點檢查，確認 hero、problem、journey、lifecycle、architecture、trust、demo 都有對應 section。
+
 ## 2026.05.23_20:27:01
 * 升級根目錄一鍵啟動流程，讓剛 clone 專案的新使用者可直接執行 start-project.bat 進行首次建置。
 * start-project.ps1 新增 node_modules 檢查，會自動為 private-ipfs-cluster、whistleblower-semaphore 與 frontend 執行缺少的 npm install。
@@ -126,5 +133,6 @@
 * 新增 IPFS 啟動、停止、健康檢查、上傳 encrypted report 的 scripts。
 * 更新根目錄 README，說明主要資料夾、啟動順序、Docker Desktop 與 Private IPFS 操作方式。
 * 更新 whistleblower-semaphore README，說明 Private IPFS、Admin decrypt、metadata 上鏈與 IPFS CID 查詢流程。
+
 
 
